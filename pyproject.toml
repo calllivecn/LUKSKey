@@ -1,0 +1,9 @@
+[project]
+name = "lanlukskey"
+version = "0.1.0"
+description = "在LAN 或者 USB盘 中拿到luks keyfile解密"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "cryptography>=46.0.2",
+]
