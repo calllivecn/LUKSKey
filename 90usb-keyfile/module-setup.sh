@@ -1,10 +1,9 @@
-# /usr/lib/dracut/modules.d/90usb-keyfile/module-setup.sh
 #!/bin/bash
 
 # 模块名称
 check() {
     # 只有在使用加密根文件系统时才启用此模块
-    [[ $hostonly ]] || [[ $mount_needs ]] && return 1
+    #[[ $hostonly ]] || [[ $mount_needs ]] && return 1
     # 检查是否启用了 crypt 模块（必须）
     if ! dracut_module_included "crypt"; then
         return 1
@@ -14,19 +13,25 @@ check() {
 
 depends() {
     # 依赖 blkid、mount 等工具，以及基础文件系统支持
-    echo "crypt filesystems"
+    echo "crypt"
     return 0
 }
 
 install() {
-    # 安装运行时脚本
-    inst_script "$moddir/usb-keyfile.sh" "/sbin/usb-keyfile.sh"
+	# 关键：安装为 pre-trigger 阶段的 hook 脚本
+    inst_hook pre-trigger 20 "$moddir/usb-keyfile.sh"
 
+    # 安装运行时脚本
+    #inst_script "$moddir/usb-keyfile.sh" "$initdir/sbin/usb-keyfile.sh"
+	
     # 安装必要工具
     inst_multiple \
+		cryptsetup \
         blkid \
         mount \
         umount \
+		mkdir \
+		rmdir \
         cat \
         sleep
 
