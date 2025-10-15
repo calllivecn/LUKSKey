@@ -9,10 +9,10 @@ LUKS_UUID=
 CONF="/etc/usb-keyfile.conf"
 
 if [ -r "$CONF" ];then
+    . "$CONF"
+else
     info "$CONF not configure, exit"
     return 1
-else
-    . "$CONF"
 fi
 
 if [ -z "$USB_UUID" ] || [ -z "$KEYFILE_PATH" ] || [ -z "$NAME_LUKS" ] || [ -z "$LUKS_UUID" ];then
@@ -20,26 +20,21 @@ if [ -z "$USB_UUID" ] || [ -z "$KEYFILE_PATH" ] || [ -z "$NAME_LUKS" ] || [ -z "
     return 1
 fi
 
-RUN_USB="/run/usb"
 
-if [ -z "$LUKS_UUID" ];then
-    info "not found LUKS DEV."
-    return 1
-else
-    info "LUKS UUID=$LUKS_UUID"
-fi
-
-info "Checking for USB keyfile (UUID=$USB_UUID)..."
+info "Checking for LUKS (UUID=$LUKS_UUID)..."
 LUKS_DEV=$(blkid -t "UUID=$LUKS_UUID" -o device 2>/dev/null)
 if [ -z "$LUKS_DEV" ];then
     warn "not found LUKS UUID: $LUKS_UUID"
     return 1
 fi
 
-# 使用 blkid 查找设备
-USB_DEV=$(blkid -t "UUID=$USB_UUID" -o device 2>/dev/null)
-
 usb_unlock(){
+
+	local RUN_USB="/run/usb"
+	udevadm wait -t 30 "/dev/disk/by-uuid/$USB_UUID"
+	# 使用 blkid 查找设备
+	USB_DEV=$(blkid -t "UUID=$USB_UUID" -o device 2>/dev/null)
+
     if [ -n "$USB_DEV" ]; then
         info "USB device found: $USB_DEV UUID=$USB_UUID"
 
@@ -66,6 +61,9 @@ usb_unlock(){
             return 1
         fi
         rmdir $RUN_USB
+
+	else
+		return 1
     fi
 }
 
