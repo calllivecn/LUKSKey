@@ -24,10 +24,8 @@ info "Checking for USB keyfile (UUID=$USB_UUID)..."
 
 info "manual trigger ontime udevadm trigger ..."
 udevadm trigger
-udevadm wait -t 50 "/dev/disk/by-uuid/$TARGET_LUKS"
-
 info "等待 USB 设备初始化（dracut 默认会等待，但保险起见）"
-sleep 3
+udevadm wait -t 50 "/dev/disk/by-uuid/$TARGET_LUKS"
 
 # 使用 blkid 查找设备
 USB_DEV=$(blkid -t "UUID=$USB_UUID" -o device 2>/dev/null)
