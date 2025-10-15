@@ -21,11 +21,12 @@ install() {
 	# 关键：安装为 initqueue 阶段的 hook 脚本
     inst_hook initqueue 20 "$moddir/usb-keyfile.sh"
 
-    # 安装运行时脚本
-    inst_simple "$moddir/usb-keyfile.conf" "$initdir/etc/usb-keyfile.conf"
+    # 安装运行时文件
+    inst_simple "$moddir/usb-keyfile.conf" "/etc/usb-keyfile.conf"
 	
     # 安装必要工具
     inst_multiple \
+		systemd-cryptsetup \
         blkid \
         mount \
         umount \
