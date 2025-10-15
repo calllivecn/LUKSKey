@@ -70,7 +70,7 @@ fi
 log_begin_msg "Falling back to manual password entry..."
 echo
 echo "USB keyfile not available or invalid."
-echo "Please unlock LUKS manually via console or SSH (if configured)."
+echo "Please unlock LUKS manually via console (if configured)."
 echo
 
 # 此时 cryptroot 脚本会自动等待从 /lib/cryptsetup/passfifo 读取密码
