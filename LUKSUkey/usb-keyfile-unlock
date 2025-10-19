@@ -32,6 +32,18 @@ fi
 
 
 
+LUKS_DEVS=()
+for LUKS_UUID in "${LUKS_UUIDS[@]}";
+do
+    log_info_msg "Checking for LUKS (UUID=$LUKS_UUID)..."
+    LUKS_DEV=$(blkid -t "UUID=$LUKS_UUID" -o device 2>/dev/null)
+    if [ -z "$LUKS_DEV" ];then
+        log_warning_msg "not found LUKS UUID: $LUKS_UUID"
+    fi
+    LUKS_DEVS+=("$LUKS_DEV")
+done
+
+
 LUKS_DEV=$(blkid -t "UUID=$LUKS_UUID" -o device 2>/dev/null)
 if [ -z "$LUKS_DEV" ];then
     log_warning_msg "not found LUKS UUID: $LUKS_UUID"
@@ -72,15 +84,8 @@ usb_unlock(){
             return 1
         fi
     else
-        _log_msg "Please enter the password to decrypt LUKS $LUKS_UUID:"
-        cryptsetup open "$LUKS_DEV" "$NAME_LUKS"
-        if [ $? -ne 0 ]; then
-            log_warning_msg "Failed to unlock LUKS without USB keyfile"
-            return 1
-        else
-            _log_msg "LUKS Root unlock done without USB keyfile."
-            return 0
-        fi
+        log_warning_msg "USB device with USB_KEY not found"
+        return 1
     fi
 }
 
@@ -88,14 +93,13 @@ if usb_unlock; then
     log_success_msg "LUKS unlocked via USB keyfile."
     exit 0
 else
-    log_begin_msg "Attempting to unlock LUKS using USB keyfile..."
-
     # === 回退到交互式密码输入 ===
-    log_begin_msg "Falling back to manual password entry..."
-    echo
-    echo "USB keyfile not available or invalid."
-    echo "Please unlock LUKS manually via console (if configured)."
-    echo
-
-    log_end_msg 0
+    _log_msg "Please enter the password to decrypt LUKS $LUKS_UUID:"
+    cryptsetup open "$LUKS_DEV" "$NAME_LUKS"
+    if [ $? -ne 0 ]; then
+        log_warning_msg "Failed to unlock LUKS without USB keyfile"
+        exit 1
+    fi
+    _log_msg "LUKS Root unlock done without USB keyfile."
+    exit 0
 fi 

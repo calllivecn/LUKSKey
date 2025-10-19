@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # --> /usr/lib/dracut/modules.d/90usb-keyfile/usb-keyfile.sh
 
 USB_UUID=

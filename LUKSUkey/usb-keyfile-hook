@@ -22,6 +22,7 @@ copy_file usb-keyfile.conf /etc/usb-keyfile.conf
 # 1. 包含必要的内核模块
 manual_add_modules usb-storage uas sd_mod
 manual_add_modules vfat ext4  # 根据你的 USB 文件系统选择
+manual_add_modules dm-crypt
 
 # 2. 复制必要命令
 copy_exec /sbin/blkid /sbin/blkid
@@ -32,7 +33,6 @@ copy_exec /bin/sleep /bin/sleep
 copy_exec /sbin/fsck.vfat /sbin/fsck.vfat
 copy_exec /sbin/fsck.ext4 /sbin/fsck.ext4
 copy_exec /sbin/cryptsetup
-manual_add_modules dm-crypt
 
 # 复制依赖库（通常 busybox 已包含，但保险起见）
 #for bin in /sbin/blkid /bin/mount; do
