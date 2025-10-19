@@ -32,7 +32,6 @@ copy_exec /bin/sleep /bin/sleep
 copy_exec /sbin/fsck.vfat /sbin/fsck.vfat
 copy_exec /sbin/fsck.ext4 /sbin/fsck.ext4
 copy_exec /usr/bin/systemd-cryptsetup /bin/systemd-cryptsetup
-copy_exec /usr/bin/systemd-ask-password /bin/sytemd-ask-password
 
 # 复制依赖库（通常 busybox 已包含，但保险起见）
 #for bin in /sbin/blkid /bin/mount; do

@@ -13,10 +13,6 @@
     sudo cryptsetup luksAddKey /dev/sdX2 /path/to/keyfile.bin
     ```
 
-
-
-
-
 ## 调试技巧
 
 - 在启动时中断 initramfs：

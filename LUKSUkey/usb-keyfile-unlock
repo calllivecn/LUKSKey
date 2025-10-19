@@ -72,8 +72,15 @@ usb_unlock(){
             return 1
         fi
     else
-        log_warning_msg "USB device with USB_KEY not found"
-        return 1
+        _log_msg "Please enter the password to decrypt LUKS $LUKS_UUID:"
+        cryptsetup open "$LUKS_DEV" "$NAME_LUKS"
+        if [ $? -ne 0 ]; then
+            log_warning_msg "Failed to unlock LUKS without USB keyfile"
+            return 1
+        else
+            _log_msg "LUKS Root unlock done without USB keyfile."
+            return 0
+        fi
     fi
 }
 
