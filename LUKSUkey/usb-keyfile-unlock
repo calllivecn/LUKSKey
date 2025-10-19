@@ -21,21 +21,21 @@ CONF="/etc/usb-keyfile.conf"
 if [ -r "$CONF" ];then
     . "$CONF"
 else
-    info "$CONF not configure, exit"
-    return 1
+    log_warning_msg "$CONF not configure, exit"
+    exit 1
 fi
 
 if [ -z "$USB_UUID" ] || [ -z "$KEYFILE_PATH" ] || [ -z "$NAME_LUKS" ] || [ -z "$LUKS_UUID" ];then
-    warn "USB_UUID KEYFILE_PATH NAME_LUKS LUKS_UUID, require configure."
-    return 1
+    log_warning_msg "USB_UUID KEYFILE_PATH NAME_LUKS LUKS_UUID, require configure."
+    exit 1
 fi
 
 
 
 LUKS_DEV=$(blkid -t "UUID=$LUKS_UUID" -o device 2>/dev/null)
 if [ -z "$LUKS_DEV" ];then
-    warn "not found LUKS UUID: $LUKS_UUID"
-    return 1
+    log_warning_msg "not found LUKS UUID: $LUKS_UUID"
+    exit 1
 fi
 
 
@@ -47,41 +47,40 @@ usb_unlock(){
     USB_DEV=$(blkid -t "UUID=$USB_UUID" -o device 2>/dev/null)
 
     if [ -n "$USB_DEV" ]; then
-        info "USB device found: $USB_DEV UUID=$USB_UUID"
+        _log_msg "USB device found: USB_KEY"
 
         mkdir -p $RUN_USB
 
-        if mount -vt auto -U "$USB_UUID" $RUN_USB; then
-            info "USB mounted successfully"
+        if mount "$USB_DEV" $RUN_USB; then
+            _log_msg "USB mounted successfully"
     
             KEYFILE="${RUN_USB}$KEYFILE_PATH"
             if [ -r "$KEYFILE" ]; then
-                info "Keyfile found, attempting unlock..."
+                _log_msg "Keyfile found, attempting unlock..."
                 systemd-cryptsetup attach "$NAME_LUKS" "$LUKS_DEV" "${RUN_USB}${KEYFILE_PATH}"
-                info "LUKS Root unlock done."
+                _log_msg "LUKS Root unlock done."
                 umount $RUN_USB
                 rmdir $RUN_USB
                 return 0
             else
-                warn "Keyfile not found: $KEYFILE"
+                log_warning_msg "Keyfile not found: $KEYFILE"
                 return 1
             fi
             umount $RUN_USB
         else
-            warn "Failed to mount USB device"
+            log_warning_msg "Failed to mount USB device"
             return 1
         fi
     else
-        warn "USB device with UUID=$USB_UUID not found"
+        log_warning_msg "USB device with USB_KEY not found"
         return 1
     fi
 }
 
 if usb_unlock; then
-    log_end_msg 0
+    log_success_msg "LUKS unlocked via USB keyfile."
     exit 0
 else
-
     log_begin_msg "Attempting to unlock LUKS using USB keyfile..."
 
     # === 回退到交互式密码输入 ===
@@ -91,9 +90,5 @@ else
     echo "Please unlock LUKS manually via console (if configured)."
     echo
 
-    # 此时 cryptroot 脚本会自动等待从 /lib/cryptsetup/passfifo 读取密码
-    # 用户可通过本地控制台输入，或通过 dropbear SSH 登录后写入 passfifo
-
     log_end_msg 0
-
 fi 

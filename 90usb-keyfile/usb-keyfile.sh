@@ -36,7 +36,7 @@ usb_unlock(){
 	USB_DEV=$(blkid -t "UUID=$USB_UUID" -o device 2>/dev/null)
 
     if [ -n "$USB_DEV" ]; then
-        info "USB device found: $USB_DEV UUID=$USB_UUID"
+        info "USB device found: USB_KEY"
 
         mkdir -p $RUN_USB
 
@@ -52,7 +52,7 @@ usb_unlock(){
                 rmdir $RUN_USB
                 return 0
             else
-                warn "Keyfile not found: $KEYFILE"
+                warn "Keyfile not found with USB_KEY"
                 return 1
             fi
             umount $RUN_USB
@@ -69,7 +69,7 @@ usb_unlock(){
 
 
 enter_password(){
-    info "USB device with UUID=$USB_UUID not found"
+    info "USB device with USB_KEY not found"
     systemd-cryptsetup attach "$NAME_LUKS" "$LUKS_DEV"
 }
 

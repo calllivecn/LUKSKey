@@ -16,3 +16,25 @@
 
 
 
+
+## 调试技巧
+
+- 在启动时中断 initramfs：
+
+- 在 GRUB 启动项中添加 break=local-top，系统会在执行 local-top 脚本前进入 shell。
+
+- 可手动运行你的脚本、检查设备、测试命令。
+
+```
+你想做什么？	推荐阶段
+加载关键内核模块（如 NVMe、加密）               init-top
+启动网络、连接远程存储                      init-premount
+解密本地根分区、激活 LVM                    local-top
+清理资源、传递状态给真实系统                    local-bottom
+```
+
+- 日志输出：
+
+    - 所有 log_* 输出会显示在控制台。
+
+    - 也可重定向到 /run/initramfs/log（如果启用了日志缓冲）。

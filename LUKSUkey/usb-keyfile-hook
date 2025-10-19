@@ -29,8 +29,8 @@ copy_exec /bin/mount /bin/mount
 copy_exec /bin/umount /bin/umount
 copy_exec /bin/cat /bin/cat
 copy_exec /bin/sleep /bin/sleep
-copy_exec /bin/fsck.vfat /sbin/fsck.vfat
-copy_exec /bin/fsck.ext4 /sbin/fsck.ext4
+copy_exec /sbin/fsck.vfat /sbin/fsck.vfat
+copy_exec /sbin/fsck.ext4 /sbin/fsck.ext4
 copy_exec /usr/bin/systemd-cryptsetup /bin/systemd-cryptsetup
 copy_exec /usr/bin/systemd-ask-password /bin/sytemd-ask-password
 
