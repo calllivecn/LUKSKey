@@ -42,7 +42,7 @@ fi
 usb_unlock(){
     
     local RUN_USB="/run/usb"
-    udevadm wait -t 30 "/dev/disk/by-uuid/$USB_UUID"
+    udevadm wait -t 10 "/dev/disk/by-uuid/$USB_UUID"
     # 使用 blkid 查找设备
     USB_DEV=$(blkid -t "UUID=$USB_UUID" -o device 2>/dev/null)
 
@@ -57,7 +57,7 @@ usb_unlock(){
             KEYFILE="${RUN_USB}$KEYFILE_PATH"
             if [ -r "$KEYFILE" ]; then
                 _log_msg "Keyfile found, attempting unlock..."
-                systemd-cryptsetup attach "$NAME_LUKS" "$LUKS_DEV" "${RUN_USB}${KEYFILE_PATH}"
+                cryptsetup open -d "${RUN_USB}${KEYFILE_PATH}" "$LUKS_DEV" "$NAME_LUKS"
                 _log_msg "LUKS Root unlock done."
                 umount $RUN_USB
                 rmdir $RUN_USB

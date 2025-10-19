@@ -31,7 +31,7 @@ fi
 usb_unlock(){
 
 	local RUN_USB="/run/usb"
-	udevadm wait -t 30 "/dev/disk/by-uuid/$USB_UUID"
+	udevadm wait -t 10 "/dev/disk/by-uuid/$USB_UUID"
 	# 使用 blkid 查找设备
 	USB_DEV=$(blkid -t "UUID=$USB_UUID" -o device 2>/dev/null)
 
