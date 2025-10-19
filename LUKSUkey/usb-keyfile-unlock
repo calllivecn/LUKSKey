@@ -14,67 +14,86 @@ case "$1" in
         ;;
 esac
 
-# ==============================
-# 配置区（请按需修改！）
-# ==============================
-USB_UUID="1234-5678"          # ← 替换为你的 U 盘分区 UUID
-KEYFILE_PATH="/keyfile.bin"   # ← U 盘上的 keyfile 路径
-CRYPTDEVICE="your_crypt_name" # ← /etc/crypttab 中的映射名，或直接用 /dev/disk/by-uuid/...（见下方说明）
-# ==============================
+. /scripts/functions
 
-log_begin_msg "Checking for USB keyfile (UUID=$USB_UUID)..."
+CONF="/etc/usb-keyfile.conf"
 
-# 等待几秒让 USB 设备被识别（重要！）
-sleep 3
-
-# 查找匹配 UUID 的设备
-USB_DEV=$(blkid -t "UUID=$USB_UUID" -o device 2>/dev/null | head -n1)
-
-if [ -n "$USB_DEV" ] && [ -e "$USB_DEV" ]; then
-    log_begin_msg "USB device found: $USB_DEV"
-    
-    # 创建挂载点
-    mkdir -p /tmp/usb
-    
-    # 尝试挂载（支持 vfat/ext4 等）
-    if mount -t auto "$USB_DEV" /tmp/usb; then
-        log_begin_msg "USB mounted successfully"
-        
-        KEYFILE="/tmp/usb$KEYFILE_PATH"
-        if [ -f "$KEYFILE" ]; then
-            log_begin_msg "Keyfile found, attempting unlock..."
-            
-            # 尝试用 keyfile 解锁
-            if cat "$KEYFILE" > /lib/cryptsetup/passfifo 2>/dev/null; then
-                log_end_msg 0
-                umount /tmp/usb
-                rmdir /tmp/usb
-                exit 0
-            else
-                log_end_msg 1 "Failed to send keyfile to passfifo"
-            fi
-        else
-            log_end_msg 1 "Keyfile not found: $KEYFILE"
-        fi
-        
-        umount /tmp/usb
-    else
-        log_end_msg 1 "Failed to mount USB device"
-    fi
-    rmdir /tmp/usb 2>/dev/null
+if [ -r "$CONF" ];then
+    . "$CONF"
 else
-    log_end_msg 1 "USB device with UUID=$USB_UUID not found"
+    info "$CONF not configure, exit"
+    return 1
 fi
 
-# === 回退到交互式密码输入 ===
-log_begin_msg "Falling back to manual password entry..."
-echo
-echo "USB keyfile not available or invalid."
-echo "Please unlock LUKS manually via console (if configured)."
-echo
+if [ -z "$USB_UUID" ] || [ -z "$KEYFILE_PATH" ] || [ -z "$NAME_LUKS" ] || [ -z "$LUKS_UUID" ];then
+    warn "USB_UUID KEYFILE_PATH NAME_LUKS LUKS_UUID, require configure."
+    return 1
+fi
 
-# 此时 cryptroot 脚本会自动等待从 /lib/cryptsetup/passfifo 读取密码
-# 用户可通过本地控制台输入，或通过 dropbear SSH 登录后写入 passfifo
 
-log_end_msg 0
 
+LUKS_DEV=$(blkid -t "UUID=$LUKS_UUID" -o device 2>/dev/null)
+if [ -z "$LUKS_DEV" ];then
+    warn "not found LUKS UUID: $LUKS_UUID"
+    return 1
+fi
+
+
+usb_unlock(){
+    
+    local RUN_USB="/run/usb"
+    udevadm wait -t 30 "/dev/disk/by-uuid/$USB_UUID"
+    # 使用 blkid 查找设备
+    USB_DEV=$(blkid -t "UUID=$USB_UUID" -o device 2>/dev/null)
+
+    if [ -n "$USB_DEV" ]; then
+        info "USB device found: $USB_DEV UUID=$USB_UUID"
+
+        mkdir -p $RUN_USB
+
+        if mount -vt auto -U "$USB_UUID" $RUN_USB; then
+            info "USB mounted successfully"
+    
+            KEYFILE="${RUN_USB}$KEYFILE_PATH"
+            if [ -r "$KEYFILE" ]; then
+                info "Keyfile found, attempting unlock..."
+                systemd-cryptsetup attach "$NAME_LUKS" "$LUKS_DEV" "${RUN_USB}${KEYFILE_PATH}"
+                info "LUKS Root unlock done."
+                umount $RUN_USB
+                rmdir $RUN_USB
+                return 0
+            else
+                warn "Keyfile not found: $KEYFILE"
+                return 1
+            fi
+            umount $RUN_USB
+        else
+            warn "Failed to mount USB device"
+            return 1
+        fi
+    else
+        warn "USB device with UUID=$USB_UUID not found"
+        return 1
+    fi
+}
+
+if usb_unlock; then
+    log_end_msg 0
+    exit 0
+else
+
+    log_begin_msg "Attempting to unlock LUKS using USB keyfile..."
+
+    # === 回退到交互式密码输入 ===
+    log_begin_msg "Falling back to manual password entry..."
+    echo
+    echo "USB keyfile not available or invalid."
+    echo "Please unlock LUKS manually via console (if configured)."
+    echo
+
+    # 此时 cryptroot 脚本会自动等待从 /lib/cryptsetup/passfifo 读取密码
+    # 用户可通过本地控制台输入，或通过 dropbear SSH 登录后写入 passfifo
+
+    log_end_msg 0
+
+fi 
