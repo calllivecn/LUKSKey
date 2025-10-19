@@ -17,7 +17,8 @@ esac
 . /usr/share/initramfs-tools/hook-functions
 
 
-copy_file usb-keyfile.conf /etc/usb-keyfile.conf
+copy_file /etc/usb-keyfile.conf /etc/usb-keyfile.conf
+copy_file /etc/luks_uuid.conf /etc/luks_uuid.conf
 
 # 1. 包含必要的内核模块
 manual_add_modules usb-storage uas sd_mod

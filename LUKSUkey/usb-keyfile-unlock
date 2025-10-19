@@ -22,36 +22,57 @@ if [ -r "$CONF" ];then
     . "$CONF"
 else
     log_warning_msg "$CONF not configure, exit"
+    log_end_msg
     exit 1
 fi
 
-if [ -z "$USB_UUID" ] || [ -z "$KEYFILE_PATH" ] || [ -z "$NAME_LUKS" ] || [ -z "$LUKS_UUID" ];then
-    log_warning_msg "USB_UUID KEYFILE_PATH NAME_LUKS LUKS_UUID, require configure."
+if [ -z "$USB_UUID" ] || [ -z "$KEYFILE_PATH" ] || [ -z "$LUKS_CONF" ];then
+    log_warning_msg "USB_UUID KEYFILE_PATH LUKS_CONF, require configure."
+    log_end_msg
     exit 1
 fi
 
-
-
-LUKS_DEVS=()
-for LUKS_UUID in "${LUKS_UUIDS[@]}";
-do
-    log_info_msg "Checking for LUKS (UUID=$LUKS_UUID)..."
-    LUKS_DEV=$(blkid -t "UUID=$LUKS_UUID" -o device 2>/dev/null)
-    if [ -z "$LUKS_DEV" ];then
-        log_warning_msg "not found LUKS UUID: $LUKS_UUID"
-    fi
-    LUKS_DEVS+=("$LUKS_DEV")
-done
-
-
-LUKS_DEV=$(blkid -t "UUID=$LUKS_UUID" -o device 2>/dev/null)
-if [ -z "$LUKS_DEV" ];then
-    log_warning_msg "not found LUKS UUID: $LUKS_UUID"
+if [ ! -r "$LUKS_CONF" ];then
+    log_warning_msg "LUKS_CONF: $LUKS_CONF not found."
+    log_end_msg
     exit 1
 fi
 
 
-usb_unlock(){
+luks_unlock(){
+    local keyfile="$1"
+    local luksuuid luksname luks_dev
+    _log_msg "Keyfile found, attempting unlock..."
+    log_end_msg
+    while read luksuuid luksname;
+    do
+        # 跳过空行和注释行
+        [ -z "$luksuuid" ] && continue
+        case "$luksuuid" in \#*)
+            continue
+            ;;
+        esac
+
+        luks_dev=$(blkid -t "UUID=$luksuuid" -o device 2>/dev/null)
+        if [ -z "$luks_dev" ];then
+            log_warning_msg "not found LUKS UUID: $luksuuid"
+            log_end_msg
+            continue
+        fi
+
+        if cryptsetup -d "${keyfile}" open "$luks_dev" "$luksname";then
+            log_success_msg "LUKS $luksname unlock done."
+            log_end_msg
+        else
+            log_warning_msg "Failed to unlock LUKS $luksname"
+            log_end_msg
+        fi
+
+    done < "$LUKS_CONF"
+}
+
+
+usb_key(){
     
     local RUN_USB="/run/usb"
     udevadm wait -t 10 "/dev/disk/by-uuid/$USB_UUID"
@@ -60,46 +81,58 @@ usb_unlock(){
 
     if [ -n "$USB_DEV" ]; then
         _log_msg "USB device found: USB_KEY"
+        log_end_msg
 
         mkdir -p $RUN_USB
 
-        if mount "$USB_DEV" $RUN_USB; then
+        if mount -o ro "$USB_DEV" $RUN_USB; then
             _log_msg "USB mounted successfully"
+            log_end_msg
     
             KEYFILE="${RUN_USB}$KEYFILE_PATH"
             if [ -r "$KEYFILE" ]; then
-                _log_msg "Keyfile found, attempting unlock..."
-                cryptsetup open -d "${RUN_USB}${KEYFILE_PATH}" "$LUKS_DEV" "$NAME_LUKS"
-                _log_msg "LUKS Root unlock done."
+                luks_unlock "$KEYFILE"
                 umount $RUN_USB
                 rmdir $RUN_USB
                 return 0
             else
                 log_warning_msg "Keyfile not found: $KEYFILE"
+                log_end_msg
                 return 1
             fi
             umount $RUN_USB
         else
             log_warning_msg "Failed to mount USB device"
+            log_end_msg
             return 1
         fi
     else
         log_warning_msg "USB device with USB_KEY not found"
+        log_end_msg
         return 1
     fi
 }
 
-if usb_unlock; then
+
+if usb_key; then
     log_success_msg "LUKS unlocked via USB keyfile."
-    exit 0
+    log_end_msg
 else
     # === 回退到交互式密码输入 ===
-    _log_msg "Please enter the password to decrypt LUKS $LUKS_UUID:"
-    cryptsetup open "$LUKS_DEV" "$NAME_LUKS"
-    if [ $? -ne 0 ]; then
-        log_warning_msg "Failed to unlock LUKS without USB keyfile"
+    _log_msg "Please enter the password to decrypt LUKS:"
+
+    stty -echo
+    read pw
+    stty echo
+    if [ -z "$pw" ]; then
+        log_warning_msg "No password entered."
+        log_end_msg
         exit 1
     fi
-    _log_msg "LUKS Root unlock done without USB keyfile."
-    exit 0
+
+    printf "$pw" > /tmp/luks-pwfile
+    luks_unlock "/tmp/luks-pwfile"
+    rm -f /tmp/luks-pwfile
 fi 
+
+exit 0
