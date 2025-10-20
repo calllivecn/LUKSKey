@@ -13,6 +13,9 @@
     sudo cryptsetup luksAddKey /dev/sdX2 /path/to/keyfile.bin
     ```
 
+- /etc/crypttab 中的配置需要删除
+- 也可以直接删除cryptsetup-initramfs软件包
+
 ## 调试技巧
 
 - 在启动时中断 initramfs：
