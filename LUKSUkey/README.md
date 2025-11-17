@@ -1,4 +1,4 @@
-# 优先尝试使用 U 盘上的密钥文件自动解锁 LUKS，若 U 盘未插入或密钥无效，则回退到交互式密码输入。
+# 并行(像多线程执行) 使用 U盘上的密钥文件，和交互式密码输入，自动解锁 LUKS。
 
 - ✅ 前提条件
 
@@ -13,8 +13,31 @@
     sudo cryptsetup luksAddKey /dev/sdX2 /path/to/keyfile.bin
     ```
 
-- /etc/crypttab 中的配置需要删除
-- 也可以直接删除cryptsetup-initramfs软件包
+- 注意点：
+
+    - initranfs-tools 工具中生成的initranfs环境使用的是busybox ash。相比bash少很功能。
+
+
+## **操作步骤**
+
+1. 去掉系统原本的配置
+
+    - /etc/crypttab 中的配置需要删除(首次运行前mv备份下)
+    - 或者直接删除cryptsetup-initramfs软件包
+
+2. 安装
+
+    ```shell
+    bash install.sh
+    ```
+
+3. 更新initramfs
+
+    ```shell
+    $ update-initramfs -u
+    ```
+
+4. 重启生效
 
 ## 调试技巧
 

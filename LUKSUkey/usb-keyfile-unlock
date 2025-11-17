@@ -38,6 +38,11 @@ if [ ! -r "$LUKS_CONF" ];then
     exit 1
 fi
 
+TMP_UNLOCK="/run/usb-keyfile-unlock.lock"
+TMP_UNLOCK_OK="/run/usb-keyfile-unlock.lock-ok"
+
+trap "rm $TMP_UNLOCK $TMP_UNLOCK_OK" EXIT
+
 
 luks_unlock(){
     local keyfile="$1"
@@ -66,14 +71,18 @@ luks_unlock(){
         else
             log_warning_msg "Failed to unlock LUKS $luksname"
             log_end_msg
+            return 1
         fi
 
     done < "$LUKS_CONF"
+
+    return 0
 }
 
 
 usb_key(){
     
+    local recode
     local RUN_USB="/run/usb"
     udevadm wait -t 10 "/dev/disk/by-uuid/$USB_UUID"
     # 使用 blkid 查找设备
@@ -91,48 +100,114 @@ usb_key(){
     
             KEYFILE="${RUN_USB}$KEYFILE_PATH"
             if [ -r "$KEYFILE" ]; then
-                luks_unlock "$KEYFILE"
-                umount $RUN_USB
-                rmdir $RUN_USB
-                return 0
+                if luks_unlock "$KEYFILE";then
+                    log_success_msg "LUKS unlocked via USB keyfile."
+                    log_end_msg
+                    recode=0
+                else
+                    log_warning_msg "Keyfile: $KEYFILE found but unlock Failed"
+                    log_end_msg
+                    recode=1
+                fi
             else
                 log_warning_msg "Keyfile not found: $KEYFILE"
                 log_end_msg
-                return 1
+                recode=1
             fi
             umount $RUN_USB
         else
             log_warning_msg "Failed to mount USB device"
             log_end_msg
-            return 1
+            recode=1
         fi
+
+        rmdir $RUN_USB
+
     else
         log_warning_msg "USB device with USB_KEY not found"
         log_end_msg
-        return 1
+        recode=1
     fi
+
+    return $recode
 }
 
 
-if usb_key; then
-    log_success_msg "LUKS unlocked via USB keyfile."
-    log_end_msg
-else
-    # === 回退到交互式密码输入 ===
-    _log_msg "Please enter the password to decrypt LUKS:"
+usb(){
+    for _ in $(seq 300)
+    do
+        (
+            exec 20>"$TMP_UNLOCK"
+            flock 20
 
-    stty -echo
-    read pw
-    stty echo
-    if [ -z "$pw" ]; then
-        log_warning_msg "No password entered."
-        log_end_msg
-        exit 1
-    fi
+            if [ -f "$TMP_UNLOCK_OK" ];then
+                _log_msg "Detected already unlocked, exit current operation."
+                log_end_msg
+                return 0
+            fi
 
-    printf "$pw" > /tmp/luks-pwfile
-    luks_unlock "/tmp/luks-pwfile"
-    rm -f /tmp/luks-pwfile
-fi 
+            if usb_key; then
+                :>"$TMP_UNLOCK_OK"
+                return 0
+            else
+                _log_msg "USB keyfile unlock failed, retrying..."
+                log_end_msg
+            fi
+        ) 
+
+        if [ -f "$TMP_UNLOCK_OK" ];then
+            break
+        fi
+    done
+}
+
+
+
+user_input(){
+    # === 交互式密码输入 ===
+    for _ in $(seq 300)
+    do
+        (
+            exec 20>"$TMP_UNLOCK"
+            flock 20
+
+            _log_msg "Please enter the password to decrypt LUKS:"
+
+            if [ -f "$TMP_UNLOCK_OK" ];then
+                _log_msg "Detected already unlocked, exit current operation."
+                log_end_msg
+                return 0
+            fi
+
+            stty -echo
+            read -t 3 pw
+            stty echo
+
+            if [ -n "$pw" ]; then
+                printf "$pw" > /run/luks-pwfile
+                if luks_unlock "/run/luks-pwfile";then
+                    :>"$TMP_UNLOCK_OK"
+                    rm -f /run/luks-pwfile
+                    return 0
+                else
+                    _log_msg "Password unlock failed, retry..."
+                    log_end_msg
+                    rm -f /run/luks-pwfile
+                fi
+            fi
+        )
+
+        if [ -f "$TMP_UNLOCK_OK" ];then
+            break
+        fi
+    done
+}
+
+usb &
+pid_usb=$!
+
+user_input
+
+wait $pid_usb
 
 exit 0
