@@ -53,9 +53,8 @@ luks_unlock(){
         if [ -f "$TMP_UNLOCK_OK" ];then
             _log_msg "Detected already unlocked, exit current operation."
             log_end_msg
-            return 0
+            exit 0
         fi
-
 
         local keyfile="$1"
         local luksuuid luksname luks_dev
@@ -78,18 +77,20 @@ luks_unlock(){
             fi
 
             if cryptsetup -d "${keyfile}" open "$luks_dev" "$luksname";then
-                :>"$TMP_UNLOCK_OK"
                 log_success_msg "LUKS $luksname unlock done."
                 log_end_msg
             else
                 log_warning_msg "Failed to unlock LUKS $luksname"
                 log_end_msg
-                return 1
+                exit 1
             fi
 
         done < "$LUKS_CONF"
 
-        return 0
+        # 全部尝试解锁后，标记完成
+        :>"$TMP_UNLOCK_OK"
+
+        exit 0
     )
 }
 
@@ -183,11 +184,22 @@ user_input(){
     done
 }
 
+
+manager_proc(){
+    while :;
+    do
+        if [ -f "$TMP_UNLOCK_OK" ];then
+            kill "$1" "$2" 2>/dev/null
+            return 0
+        fi
+        sleep 1
+    done
+}
+
 usb &
 pid_usb=$!
 
+manager_proc $$ $pid_usb &
+
+# 需要交互，不能使用( .. ) 子shell，否则无法读取用户输入
 user_input
-
-wait $pid_usb
-
-exit 0
