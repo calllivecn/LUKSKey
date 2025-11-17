@@ -15,11 +15,17 @@ else
     return 1
 fi
 
-if [ -z "$USB_UUID" ] || [ -z "$KEYFILE_PATH" ] || [ -z "$NAME_LUKS" ] || [ -z "$LUKS_UUID" ];then
+if [ -z "$USB_UUID" ] || [ -z "$KEYFILE_PATH" ];then
     warn "USB_UUID KEYFILE_PATH NAME_LUKS LUKS_UUID, require configure."
     return 1
 fi
 
+
+if [ ! -r "$LUKS_CONF" ];then
+    log_warning_msg "LUKS_CONF: $LUKS_CONF not found."
+    log_end_msg
+    return 1
+fi
 
 info "Checking for LUKS (UUID=$LUKS_UUID)..."
 LUKS_DEV=$(blkid -t "UUID=$LUKS_UUID" -o device 2>/dev/null)
@@ -28,10 +34,57 @@ if [ -z "$LUKS_DEV" ];then
     return 1
 fi
 
-usb_unlock(){
 
+TMP_UNLOCK="/run/usb-keyfile-unlock.lock"
+TMP_UNLOCK_OK="/run/usb-keyfile-unlock.lock-ok"
+
+trap "rm $TMP_UNLOCK $TMP_UNLOCK_OK" EXIT
+
+
+luks_unlock(){
+    {
+        flock 20
+        if [ -f "$TMP_UNLOCK_OK" ];then
+            info "Detected already unlocked, exit current operation."
+            return 0
+        fi
+
+        local keyfile="$1"
+        info "Keyfile found, attempting unlock..."
+        while read luksuuid luksname;
+        do
+            # 跳过空行和注释行
+            [ -z "$luksuuid" ] && continue
+            case "$luksuuid" in \#*)
+                continue
+                ;;
+            esac
+
+            luks_dev=$(blkid -t "UUID=$luksuuid" -o device 2>/dev/null)
+            if [ -z "$luks_dev" ];then
+                warn "not found LUKS UUID: $luksuuid"
+                continue
+            fi
+
+            if systemd-cryptsetup attach "$luksname" "$luks_dev" "$keyfile";then
+                info "LUKS $luksname unlock done."
+            else
+                warn "LUKS $luksname unlock failed."
+            fi
+
+        done
+        
+        :>"$TMP_UNLOCK_OK"
+
+    } 20 > "$TMP_UNLOCK"
+}
+
+
+usb_key(){
+
+    local recode
 	local RUN_USB="/run/usb"
-	udevadm wait -t 10 "/dev/disk/by-uuid/$USB_UUID"
+	udevadm wait "/dev/disk/by-uuid/$USB_UUID"
 	# 使用 blkid 查找设备
 	USB_DEV=$(blkid -t "UUID=$USB_UUID" -o device 2>/dev/null)
 
@@ -40,7 +93,7 @@ usb_unlock(){
 
         mkdir -p $RUN_USB
 
-        if mount -vt auto -U "$USB_UUID" $RUN_USB; then
+        if mount -vt auto -o ro -U "$USB_UUID" $RUN_USB; then
             info "USB mounted successfully"
     
             KEYFILE="${RUN_USB}$KEYFILE_PATH"
@@ -48,33 +101,73 @@ usb_unlock(){
                 info "Keyfile found, attempting unlock..."
                 systemd-cryptsetup attach "$NAME_LUKS" "$LUKS_DEV" "${RUN_USB}${KEYFILE_PATH}"
                 info "LUKS Root unlock done."
-                umount $RUN_USB
-                rmdir $RUN_USB
-                return 0
+                recode=0
             else
                 warn "Keyfile not found with USB_KEY"
-                return 1
+                recode=1
             fi
             umount $RUN_USB
         else
             warn "Failed to mount USB device"
-            return 1
+            recode=1
         fi
         rmdir $RUN_USB
 
 	else
-		return 1
+		recode=1
     fi
+
+    return $recode
 }
 
 
-enter_password(){
-    info "USB device with USB_KEY not found"
-    systemd-cryptsetup attach "$NAME_LUKS" "$LUKS_DEV"
+usb(){
+    for _ in {1..30}
+    do
+        if usb_key;then
+            break
+        fi
+    done
 }
 
-# === 回退到交互式输入 ===
-if usb_unlock;then
-	enter_password
-fi
+user_input(){
+    # === 交互式密码输入 ===
+    for _ in {1..30}
+    do
+        info "Please enter the password to decrypt LUKS:"
+        read -s pw
+
+        if [ -n "$pw" ];then
+            printf "$pw" > /run/usb-keyfile-pw-file
+            if luks_unlock "/run/usb-keyfile-pw-file";then
+                rm /run/usb-keyfile-pw-file
+                break
+            else
+                rm /run/usb-keyfile-pw-file
+                warn "Password incorrect, please try again."
+            fi
+        fi
+
+    done
+}
+
+
+manager_proc(){
+    while :;
+    do
+        if [ -f "$TMP_UNLOCK_OK" ];then
+            kill "$1" "$2" 2>/dev/null
+            return 0
+        fi
+        sleep 1
+    done
+}
+
+usb &
+pid_usb=$!
+
+manager_proc $$ $pid_usb &
+
+# 需要交互，不能使用( .. ) 子shell，否则无法读取用户输入
+user_input
 

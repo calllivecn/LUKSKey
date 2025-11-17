@@ -23,10 +23,12 @@ install() {
 
     # 安装运行时文件
     inst_simple "$moddir/usb-keyfile.conf" "/etc/usb-keyfile.conf"
+    inst_simple "$moddir/luks_uuid.conf" "/etc/luks_uuid.conf"
 	
     # 安装必要工具
     inst_multiple \
 		systemd-cryptsetup \
+        flock \
         blkid \
         mount \
         umount \
