@@ -45,38 +45,52 @@ trap "rm $TMP_UNLOCK $TMP_UNLOCK_OK" EXIT
 
 
 luks_unlock(){
-    local keyfile="$1"
-    local luksuuid luksname luks_dev
-    _log_msg "Keyfile found, attempting unlock..."
-    log_end_msg
-    while read luksuuid luksname;
-    do
-        # 跳过空行和注释行
-        [ -z "$luksuuid" ] && continue
-        case "$luksuuid" in \#*)
-            continue
-            ;;
-        esac
 
-        luks_dev=$(blkid -t "UUID=$luksuuid" -o device 2>/dev/null)
-        if [ -z "$luks_dev" ];then
-            log_warning_msg "not found LUKS UUID: $luksuuid"
+    (
+        exec 20>"$TMP_UNLOCK"
+        flock 20
+
+        if [ -f "$TMP_UNLOCK_OK" ];then
+            _log_msg "Detected already unlocked, exit current operation."
             log_end_msg
-            continue
+            return 0
         fi
 
-        if cryptsetup -d "${keyfile}" open "$luks_dev" "$luksname";then
-            log_success_msg "LUKS $luksname unlock done."
-            log_end_msg
-        else
-            log_warning_msg "Failed to unlock LUKS $luksname"
-            log_end_msg
-            return 1
-        fi
 
-    done < "$LUKS_CONF"
+        local keyfile="$1"
+        local luksuuid luksname luks_dev
+        _log_msg "Keyfile found, attempting unlock..."
+        log_end_msg
+        while read luksuuid luksname;
+        do
+            # 跳过空行和注释行
+            [ -z "$luksuuid" ] && continue
+            case "$luksuuid" in \#*)
+                continue
+                ;;
+            esac
 
-    return 0
+            luks_dev=$(blkid -t "UUID=$luksuuid" -o device 2>/dev/null)
+            if [ -z "$luks_dev" ];then
+                log_warning_msg "not found LUKS UUID: $luksuuid"
+                log_end_msg
+                continue
+            fi
+
+            if cryptsetup -d "${keyfile}" open "$luks_dev" "$luksname";then
+                :>"$TMP_UNLOCK_OK"
+                log_success_msg "LUKS $luksname unlock done."
+                log_end_msg
+            else
+                log_warning_msg "Failed to unlock LUKS $luksname"
+                log_end_msg
+                return 1
+            fi
+
+        done < "$LUKS_CONF"
+
+        return 0
+    )
 }
 
 
@@ -84,7 +98,8 @@ usb_key(){
     
     local recode
     local RUN_USB="/run/usb"
-    udevadm wait -t 10 "/dev/disk/by-uuid/$USB_UUID"
+    # udevadm wait -t 10 "/dev/disk/by-uuid/$USB_UUID"
+    udevadm wait "/dev/disk/by-uuid/$USB_UUID"
     # 使用 blkid 查找设备
     USB_DEV=$(blkid -t "UUID=$USB_UUID" -o device 2>/dev/null)
 
@@ -134,71 +149,36 @@ usb_key(){
 
 
 usb(){
-    for _ in $(seq 300)
+    for _ in $(seq 30)
     do
-        (
-            exec 20>"$TMP_UNLOCK"
-            flock 20
-
-            if [ -f "$TMP_UNLOCK_OK" ];then
-                _log_msg "Detected already unlocked, exit current operation."
-                log_end_msg
-                return 0
-            fi
-
-            if usb_key; then
-                :>"$TMP_UNLOCK_OK"
-                return 0
-            else
-                _log_msg "USB keyfile unlock failed, retrying..."
-                log_end_msg
-            fi
-        ) 
-
-        if [ -f "$TMP_UNLOCK_OK" ];then
+        if usb_key; then
             break
         fi
     done
 }
 
 
-
 user_input(){
     # === 交互式密码输入 ===
-    for _ in $(seq 300)
+    for _ in $(seq 30)
     do
-        (
-            exec 20>"$TMP_UNLOCK"
-            flock 20
+        _log_msg "Please enter the password to decrypt LUKS:"
 
-            _log_msg "Please enter the password to decrypt LUKS:"
+        stty -echo
+        # read -t 3 pw
+        read pw
+        stty echo
 
-            if [ -f "$TMP_UNLOCK_OK" ];then
-                _log_msg "Detected already unlocked, exit current operation."
-                log_end_msg
+        if [ -n "$pw" ]; then
+            printf "$pw" > /run/luks-pwfile
+            if luks_unlock "/run/luks-pwfile";then
+                rm -f /run/luks-pwfile
                 return 0
+            else
+                _log_msg "Password unlock failed, retry..."
+                log_end_msg
+                rm -f /run/luks-pwfile
             fi
-
-            stty -echo
-            read -t 3 pw
-            stty echo
-
-            if [ -n "$pw" ]; then
-                printf "$pw" > /run/luks-pwfile
-                if luks_unlock "/run/luks-pwfile";then
-                    :>"$TMP_UNLOCK_OK"
-                    rm -f /run/luks-pwfile
-                    return 0
-                else
-                    _log_msg "Password unlock failed, retry..."
-                    log_end_msg
-                    rm -f /run/luks-pwfile
-                fi
-            fi
-        )
-
-        if [ -f "$TMP_UNLOCK_OK" ];then
-            break
         fi
     done
 }
