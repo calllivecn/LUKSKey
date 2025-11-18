@@ -1,5 +1,6 @@
 # 📁 dracut 模块结构
 
+- 一个 $\text{dracut}$ 模块本质上就是一个包含特定文件的目录。
 - 文件列表:
 
 ```
@@ -9,8 +10,11 @@
 └── usb-keyfile.conf   # 脚本配置（自动安装到 initramfs 中的）
 ```
 
+<br/>
+<br/>
+<br/>
 
-## 安装与使用
+# 安装与使用
 
 - dracut 模块通常放在, 安装到这里(ubuntu25.10)：
 
@@ -34,8 +38,26 @@ dracut --force
 
 - 重启系统开始
 
+<br/>
+<br/>
+<br/>
 
-## 调试
+# 开发
+
+- 存放位置和命名 🏷️你的模块目录应该放在：
+
+  ```text
+  /usr/lib/dracut/modules.d/ (系统默认模块)
+  /etc/dracut/modules.d/ (自定义或覆盖模块)
+  模块目录的命名规则通常是：<优先级数字><模块名>，例如 90my-custom-module。这个数字决定了该模块在 dracut 处理时的顺序。
+  ```
+
+
+<br/>
+<br/>
+<br/>
+
+# 调试
 
 - linux 命令参数中添加:
 

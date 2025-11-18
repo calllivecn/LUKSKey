@@ -1,39 +1,51 @@
 #!/bin/bash
 
-# 模块名称
 check() {
-    # 只有在使用加密根文件系统时才启用此模块
-    #[[ $hostonly ]] || [[ $mount_needs ]] && return 1
-    # 检查是否启用了 crypt 模块（必须）
-    #if ! dracut_module_included "systemd-cryptsetup"; then
-    #    return 1
-    #fi
+    local fs
+    # if cryptsetup is not installed, then we cannot support encrypted devices.
+    require_binaries "$systemdutildir"/systemd-cryptsetup || return 1
+
+    [[ $hostonly_mode == "strict" ]] || [[ $mount_needs ]] && {
+        for fs in "${host_fs_types[@]}"; do
+            [[ $fs == "crypto_LUKS" ]] && return 0
+        done
+        return 255
+    }
+
     return 0
 }
 
+
 depends() {
     # 依赖 blkid、mount 等工具，以及基础文件系统支持
-    #echo "systemd-cryptsetup"
+    # deps="systemd-cryptsetup systemd-ask-password"
+    deps="systemd-ask-password"
+    echo "$deps"
     return 0
 }
 
 install() {
-	# 关键：安装为 initqueue 阶段的 hook 脚本
+    # ~~关键：安装为 initqueue 阶段的 hook 脚本~~
     inst_hook initqueue 20 "$moddir/usb-keyfile.sh"
 
+    # inst_hook pre-mount 20 "$moddir/usb-keyfile.sh"
+
     # 安装运行时文件
-    inst_simple "$moddir/usb-keyfile.conf" "/etc/usb-keyfile.conf"
-    inst_simple "$moddir/luks_uuid.conf" "/etc/luks_uuid.conf"
-	
+    # inst_simple "$moddir/usb-keyfile.conf" "/etc/usb-keyfile.conf"
+    # inst_simple "$moddir/luks_uuid.conf" "/etc/luks_uuid.conf"
+
+    inst_simple "/etc/usb-keyfile.conf"
+    inst_simple "/etc/luks_uuid.conf"
+
     # 安装必要工具
     inst_multiple \
-		systemd-cryptsetup \
+        systemd-cryptsetup \
         flock \
         blkid \
         mount \
         umount \
-		mkdir \
-		rmdir \
+        mkdir \
+        rmdir \
         cat \
         sleep
 

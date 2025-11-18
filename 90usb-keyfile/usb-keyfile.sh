@@ -27,13 +27,6 @@ if [ ! -r "$LUKS_CONF" ];then
     return 1
 fi
 
-info "Checking for LUKS (UUID=$LUKS_UUID)..."
-LUKS_DEV=$(blkid -t "UUID=$LUKS_UUID" -o device 2>/dev/null)
-if [ -z "$LUKS_DEV" ];then
-    warn "not found LUKS UUID: $LUKS_UUID"
-    return 1
-fi
-
 
 TMP_UNLOCK="/run/usb-keyfile-unlock.lock"
 TMP_UNLOCK_OK="/run/usb-keyfile-unlock.lock-ok"
@@ -72,7 +65,7 @@ luks_unlock(){
                 warn "LUKS $luksname unlock failed."
             fi
 
-        done
+        done < "$LUKS_CONF"
         
         :>"$TMP_UNLOCK_OK"
 
@@ -99,7 +92,13 @@ usb_key(){
             KEYFILE="${RUN_USB}$KEYFILE_PATH"
             if [ -r "$KEYFILE" ]; then
                 info "Keyfile found, attempting unlock..."
-                systemd-cryptsetup attach "$NAME_LUKS" "$LUKS_DEV" "${RUN_USB}${KEYFILE_PATH}"
+                if luks_unlock "$KEYFILE";then
+                    info "LUKS unlock succeeded using keyfile."
+                    recode=0
+                else
+                    warn "LUKS unlock failed using keyfile."
+                    recode=1
+                fi
                 info "LUKS Root unlock done."
                 recode=0
             else
@@ -135,7 +134,7 @@ user_input(){
     for _ in {1..30}
     do
         info "Please enter the password to decrypt LUKS:"
-        read -s pw
+        read -s pw < /dev/console
 
         if [ -n "$pw" ];then
             printf "$pw" > /run/usb-keyfile-pw-file
