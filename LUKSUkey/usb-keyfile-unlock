@@ -202,4 +202,5 @@ pid_usb=$!
 manager_proc $$ $pid_usb &
 
 # 需要交互，不能使用( .. ) 子shell，否则无法读取用户输入
+trap "exit 0" SIGTERM
 user_input
