@@ -1,0 +1,1 @@
+bash /bin/usb-keyfile.sh

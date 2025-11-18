@@ -18,24 +18,23 @@ check() {
 
 depends() {
     # 依赖 blkid、mount 等工具，以及基础文件系统支持
-    # deps="systemd-cryptsetup systemd-ask-password"
-    deps="systemd-ask-password"
+    # deps="systemd-cryptsetup" 不添加依赖, 是因为 systemd-cryptsetup 会依赖crypt模块。
+    deps="bash lvm systemd-ask-password"
     echo "$deps"
     return 0
 }
 
 install() {
     # ~~关键：安装为 initqueue 阶段的 hook 脚本~~
+    # inst_hook initqueue 20 "$moddir/boot-usb-keyfile.sh"
     inst_hook initqueue 20 "$moddir/usb-keyfile.sh"
 
     # inst_hook pre-mount 20 "$moddir/usb-keyfile.sh"
 
-    # 安装运行时文件
-    # inst_simple "$moddir/usb-keyfile.conf" "/etc/usb-keyfile.conf"
-    # inst_simple "$moddir/luks_uuid.conf" "/etc/luks_uuid.conf"
-
+    # 安装文件到initramfs配置目录
     inst_simple "/etc/usb-keyfile.conf"
     inst_simple "/etc/luks_uuid.conf"
+    # inst_simple "$moddir/usb-keyfile.sh" /bin/usb-keyfile.sh
 
     # 安装必要工具
     inst_multiple \

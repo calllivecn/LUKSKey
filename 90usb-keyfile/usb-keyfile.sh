@@ -36,6 +36,7 @@ trap "rm $TMP_UNLOCK $TMP_UNLOCK_OK" EXIT
 
 luks_unlock(){
     {
+        exec 20>"$TMP_UNLOCK"
         flock 20
         if [ -f "$TMP_UNLOCK_OK" ];then
             info "Detected already unlocked, exit current operation."
@@ -69,7 +70,7 @@ luks_unlock(){
         
         :>"$TMP_UNLOCK_OK"
 
-    } 20 > "$TMP_UNLOCK"
+    }
 }
 
 
@@ -156,6 +157,7 @@ manager_proc(){
     do
         if [ -f "$TMP_UNLOCK_OK" ];then
             kill "$1" "$2" 2>/dev/null
+            lvm_scan
             return 0
         fi
         sleep 1
@@ -168,5 +170,6 @@ pid_usb=$!
 manager_proc $$ $pid_usb &
 
 # 需要交互，不能使用( .. ) 子shell，否则无法读取用户输入
+trap "exit 0" SIGTERM
 user_input
 
