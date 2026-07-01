@@ -27,7 +27,7 @@
 ```
 # vim /etc/dracut.conf.d/your-usbkeyfile.conf
 add_dracutmodules+=" usb-keyfile " # 注意这里前后都要有空格
-omit_dracutmodules+=" crypt systemd-cryptsetup " # 创建initramfs 时，排队系统自带的模块。
+omit_dracutmodules+=" crypt systemd-cryptsetup " # 创建initramfs 时，排除系统自带的模块。
 ```
 
 - 更新initramfs
@@ -44,7 +44,7 @@ dracut --force
 
 # 开发
 
-- 存放位置和命名 🏷️你的模块目录应该放在：
+- 存放位置和命名🏷️你的模块目录应该放在：
 
   ```text
   /usr/lib/dracut/modules.d/ (系统默认模块)
