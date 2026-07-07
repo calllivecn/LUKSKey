@@ -11,12 +11,12 @@ usb-keyfile.py - dracut initramfs hook 的 Python 实现
 import os
 import sys
 import time
-import struct
+# import struct
 import fcntl
 import subprocess
 import threading
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 # ===== 常量 =====
 CONF_PATH = "/etc/usb-keyfile.conf"
@@ -45,7 +45,7 @@ class LUKSEntry:
 
 # ===== 全局状态 =====
 config: Optional[Config] = None
-luks_entries: List[LUKSEntry] = []
+luks_entries: list[LUKSEntry] = []
 unlock_done = False
 
 
@@ -66,6 +66,7 @@ def load_config(path: str = CONF_PATH) -> Config:
     cfg = Config()
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Config file not found: {path}")
+    
     with open(path, "r") as f:
         for line in f:
             line = line.strip()
@@ -85,11 +86,12 @@ def load_config(path: str = CONF_PATH) -> Config:
     return cfg
 
 
-def load_luks_conf(path: str) -> List[LUKSEntry]:
+def load_luks_conf(path: str) -> list[LUKSEntry]:
     """加载 LUKS UUID 配置，返回条目列表"""
     entries = []
     if not os.path.isfile(path):
         raise FileNotFoundError(f"LUKS config file not found: {path}")
+
     with open(path, "r") as f:
         for line in f:
             line = line.strip()
@@ -102,20 +104,41 @@ def load_luks_conf(path: str) -> List[LUKSEntry]:
 
 
 # ===== USB 相关操作 =====
+# def wait_for_device(uuid: str) -> bool:
+#     """等待 USB 设备出现（使用 blkid 检查），最多重试 MAX_RETRIES 次"""
+#     for i in range(MAX_RETRIES):
+#         try:
+#             result = subprocess.run(
+#                 ["blkid", "-t", f"UUID={uuid}", "-o", "device"],
+#                 capture_output=True, text=True, timeout=5
+#             )
+#             if result.returncode == 0 and result.stdout.strip():
+#                 return True
+#         except Exception as e:
+#             warn(f"blkid error: {e}")
+#         time.sleep(RETRY_INTERVAL)
+#     return False
+
+DEV_BY_UUID = Path("/dev/disk/by-uuid")
+
 def wait_for_device(uuid: str) -> bool:
-    """等待 USB 设备出现（使用 blkid 检查），最多重试 MAX_RETRIES 次"""
+    target = DEV_BY_UUID / uuid
+    info(f"Waiting for device {uuid}...")
     for i in range(MAX_RETRIES):
-        try:
-            result = subprocess.run(
-                ["blkid", "-t", f"UUID={uuid}", "-o", "device"],
-                capture_output=True, text=True, timeout=5
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return True
-        except Exception as e:
-            warn(f"blkid error: {e}")
+        if target.exists():
+            info(f"Device {uuid} found via {target.resolve()}")
+            return True
         time.sleep(RETRY_INTERVAL)
     return False
+
+
+def resolve_luks_device(uuid: str) -> str | None:
+    target = DEV_BY_UUID / uuid
+    try:
+        return str(target.resolve(strict=True))
+    except (FileNotFoundError, RuntimeError):
+        warn(f"Cannot resolve UUID {uuid} to a device")
+        return None
 
 
 def mount_usb(uuid: str) -> bool:
@@ -153,21 +176,6 @@ def read_keyfile(rel_path: str) -> Optional[bytes]:
 
 
 # ===== LUKS 解锁 =====
-def resolve_luks_device(uuid: str) -> Optional[str]:
-    """通过 blkid 查找 UUID 对应的块设备路径"""
-    try:
-        result = subprocess.run(
-            ["blkid", "-t", f"UUID={uuid}", "-o", "device"],
-            capture_output=True, text=True, timeout=5
-        )
-        if result.returncode == 0:
-            dev = result.stdout.strip()
-            return dev if dev else None
-    except Exception as e:
-        warn(f"resolve device error: {e}")
-    return None
-
-
 def luks_unlock(entry: LUKSEntry, key: bytes) -> bool:
     """向 systemd-cryptsetup 提供密钥解锁一个 LUKS 分区"""
     dev = resolve_luks_device(entry.uuid)
