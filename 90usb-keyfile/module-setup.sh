@@ -26,7 +26,6 @@ depends() {
 
 install() {
     # ~~关键：安装为 initqueue 阶段的 hook 脚本~~
-    # inst_hook initqueue 20 "$moddir/boot-usb-keyfile.sh"
     inst_hook initqueue 20 "$moddir/usb-keyfile.sh"
 
     # inst_hook pre-mount 20 "$moddir/usb-keyfile.sh"

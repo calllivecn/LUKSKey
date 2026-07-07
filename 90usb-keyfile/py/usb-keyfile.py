@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 
 """
 usb-keyfile.py - dracut initramfs hook 的 Python 实现
@@ -11,8 +11,6 @@ usb-keyfile.py - dracut initramfs hook 的 Python 实现
 import os
 import sys
 import time
-# import struct
-import fcntl
 import subprocess
 import threading
 from pathlib import Path
@@ -21,11 +19,11 @@ from typing import Optional
 # ===== 常量 =====
 CONF_PATH = "/etc/usb-keyfile.conf"
 LUKS_CONF_PATH = "/etc/luks_uuid.conf"
-LOCK_FILE = "/run/usb-keyfile-unlock.lock"
-OK_FILE = "/run/usb-keyfile-unlock.lock-ok"
-MOUNT_POINT = "/run/usb"
+MOUNT_POINT = Path("/run/usb")
 MAX_RETRIES = 30
 RETRY_INTERVAL = 1.0  # 秒
+
+DEV_BY_UUID = Path("/dev/disk/by-uuid")
 
 
 class Config:
@@ -46,7 +44,8 @@ class LUKSEntry:
 # ===== 全局状态 =====
 config: Optional[Config] = None
 luks_entries: list[LUKSEntry] = []
-unlock_done = False
+_unlock_lock = threading.Lock()
+_unlock_done = False
 
 
 # ===== 日志 =====
@@ -60,13 +59,25 @@ def warn(msg: str):
     print(f"usb-keyfile: WARN: {msg}", flush=True)
 
 
+# ===== 辅助函数：检查/设置解锁完成状态（线程安全） =====
+def is_unlock_done() -> bool:
+    with _unlock_lock:
+        return _unlock_done
+
+
+def set_unlock_done():
+    global _unlock_done
+    with _unlock_lock:
+        _unlock_done = True
+
+
 # ===== 配置加载 =====
 def load_config(path: str = CONF_PATH) -> Config:
     """加载主配置文件，返回 Config 对象"""
     cfg = Config()
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Config file not found: {path}")
-    
+
     with open(path, "r") as f:
         for line in f:
             line = line.strip()
@@ -104,24 +115,9 @@ def load_luks_conf(path: str) -> list[LUKSEntry]:
 
 
 # ===== USB 相关操作 =====
-# def wait_for_device(uuid: str) -> bool:
-#     """等待 USB 设备出现（使用 blkid 检查），最多重试 MAX_RETRIES 次"""
-#     for i in range(MAX_RETRIES):
-#         try:
-#             result = subprocess.run(
-#                 ["blkid", "-t", f"UUID={uuid}", "-o", "device"],
-#                 capture_output=True, text=True, timeout=5
-#             )
-#             if result.returncode == 0 and result.stdout.strip():
-#                 return True
-#         except Exception as e:
-#             warn(f"blkid error: {e}")
-#         time.sleep(RETRY_INTERVAL)
-#     return False
-
-DEV_BY_UUID = Path("/dev/disk/by-uuid")
 
 def wait_for_device(uuid: str) -> bool:
+    """等待 USB 设备出现（检查 /dev/disk/by-uuid 目录），最多重试 MAX_RETRIES 次"""
     target = DEV_BY_UUID / uuid
     info(f"Waiting for device {uuid}...")
     for i in range(MAX_RETRIES):
@@ -132,7 +128,8 @@ def wait_for_device(uuid: str) -> bool:
     return False
 
 
-def resolve_luks_device(uuid: str) -> str | None:
+def resolve_luks_device(uuid: str) -> Optional[str]:
+    """通过 /dev/disk/by-uuid 解析 UUID 对应的设备路径"""
     target = DEV_BY_UUID / uuid
     try:
         return str(target.resolve(strict=True))
@@ -143,7 +140,7 @@ def resolve_luks_device(uuid: str) -> str | None:
 
 def mount_usb(uuid: str) -> bool:
     """挂载 USB 设备为只读"""
-    Path(MOUNT_POINT).mkdir(parents=True, exist_ok=True)
+    MOUNT_POINT.mkdir(parents=True, exist_ok=True)
     try:
         subprocess.run(
             ["mount", "-vt", "auto", "-o", "ro", "-U", uuid, MOUNT_POINT],
@@ -166,9 +163,10 @@ def umount_usb():
 
 def read_keyfile(rel_path: str) -> Optional[bytes]:
     """从 USB 挂载点读取密钥文件内容"""
-    abs_path = os.path.join(MOUNT_POINT, rel_path)
+    abs_path =  MOUNT_POINT / rel_path
+    
     try:
-        with open(abs_path, "rb") as f:
+        with open(abs_path.absolute(), "rb") as f:
             return f.read()
     except Exception as e:
         warn(f"Cannot read keyfile {abs_path}: {e}")
@@ -203,25 +201,13 @@ def luks_unlock(entry: LUKSEntry, key: bytes) -> bool:
 
 
 def unlock_all_using_key(key: bytes) -> bool:
-    """用给定密钥解锁所有 LUKS 分区（带文件锁）"""
-    global unlock_done
-    if unlock_done:
+    """用给定密钥解锁所有 LUKS 分区（线程安全，通过 threading.Lock 保护）"""
+    if is_unlock_done():
         return True
 
-    # 文件锁
-    try:
-        lock_fd = os.open(LOCK_FILE, os.O_CREAT | os.O_RDWR)
-        fcntl.flock(lock_fd, fcntl.LOCK_EX)
-    except Exception as e:
-        warn(f"Cannot acquire lock: {e}")
-        return False
-
-    try:
-        if unlock_done:
-            return True
-        if os.path.isfile(OK_FILE):
-            info("Already unlocked, skip")
-            unlock_done = True
+    global _unlock_done
+    with _unlock_lock:
+        if _unlock_done:
             return True
 
         any_ok = False
@@ -230,26 +216,20 @@ def unlock_all_using_key(key: bytes) -> bool:
                 any_ok = True
 
         if any_ok:
-            # 标记已解锁
-            Path(OK_FILE).touch()
-            unlock_done = True
+            _unlock_done = True
+            info("All LUKS partitions unlocked")
             return True
         return False
-    finally:
-        fcntl.flock(lock_fd, fcntl.LOCK_UN)
-        os.close(lock_fd)
 
 
 # ===== USB 解锁循环 =====
 def usb_loop(stop_event: threading.Event):
     """尝试 USB 自动解锁（循环）"""
-    for i in range(MAX_RETRIES):
-        if stop_event.is_set():
-            return
-        if unlock_done:
+    for i in range(1, MAX_RETRIES+1):
+        if stop_event.is_set() or is_unlock_done():
             return
 
-        info(f"USB attempt {i+1}/{MAX_RETRIES}...")
+        info(f"USB attempt {i}/{MAX_RETRIES}...")
         if not wait_for_device(config.usb_uuid):
             warn("USB device not found, retrying...")
             time.sleep(RETRY_INTERVAL)
@@ -283,16 +263,18 @@ def interactive_input(stop_event: threading.Event):
     try:
         with open("/dev/console", "rb") as console:
             for i in range(MAX_RETRIES):
-                if stop_event.is_set() or unlock_done:
+                if stop_event.is_set() or is_unlock_done():
                     return
+                
                 sys.stderr.write("Password: ")
                 sys.stderr.flush()
+                
                 try:
-                    # 从控制台读取一行，注意可能包含换行
                     line = console.readline()
                 except Exception:
                     time.sleep(RETRY_INTERVAL)
                     continue
+                
                 if not line:
                     continue
                 pw = line.decode("utf-8", errors="replace").rstrip("\n\r")
@@ -313,10 +295,8 @@ def monitor_unlock(stop_event: threading.Event):
     """监控解锁完成事件，完成后退出程序"""
     while not stop_event.is_set():
         time.sleep(0.5)
-        if unlock_done:
+        if is_unlock_done():
             stop_event.set()
-            time.sleep(0.2)
-            # 退出前给其他线程 1 秒清理
             time.sleep(1)
             os._exit(0)
 
