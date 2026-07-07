@@ -1,0 +1,15 @@
+[usb]
+# USB 设备分区 UUID（对应原 USB_UUID）
+uuid = "3105-B091"
+
+# USB分区中 keyfile 文件
+keyfile = "/keyfile.bin"
+
+[luks]
+# 需要解锁的 LUKS 分区列表（对应原 luks_uuid.conf）
+# 格式：[[luks.partitions]] 每次一个条目
+# U 盘上的 keyfile 路径（对应原 KEYFILE_PATH）
+partitions = [
+    { name="root", uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
+    { name="data", uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", options="discard"},
+]
