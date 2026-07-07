@@ -17,16 +17,16 @@ check() {
 
 
 depends() {
-    # 依赖 blkid、mount 等工具，以及基础文件系统支持
+    # 依赖 mount 等工具，以及基础文件系统支持
     # deps="systemd-cryptsetup" 不添加依赖, 是因为 systemd-cryptsetup 会依赖crypt模块。
-    deps="bash lvm systemd-ask-password"
+    deps="lvm systemd-ask-password"
     echo "$deps"
     return 0
 }
 
 install() {
     # ~~关键：安装为 initqueue 阶段的 hook 脚本~~
-    inst_hook initqueue 20 "$moddir/dist/usb-keyfile"
+    inst_hook initqueue 20 "$moddir/usb-keyfile"
 
     # inst_hook pre-mount 20 "$moddir/usb-keyfile.sh"
 

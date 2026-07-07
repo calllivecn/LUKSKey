@@ -52,12 +52,14 @@ _unlock_lock = threading.Lock()
 # ===== 日志 =====
 def info(msg: str):
     """输出 INFO 日志"""
-    print(f"usb-keyfile: INFO: {msg}", flush=True)
+    with open("dev/console", "w+") as console:
+        print(f"usb-keyfile: INFO: {msg}", file=console, flush=True)
 
 
 def warn(msg: str):
     """输出 WARN 日志"""
-    print(f"usb-keyfile: WARN: {msg}", flush=True)
+    with open("dev/console", "w+") as console:
+        print(f"usb-keyfile: WARN: {msg}", file=console, flush=True)
 
 
 # ===== 配置加载 =====
@@ -239,6 +241,7 @@ def interactive_input(stop_event: threading.Event):
                 if not line:
                     continue
                 pw = line.decode("utf-8", errors="replace").rstrip("\n\r")
+                info(f"当前的输入：{pw}")
                 if not pw:
                     continue
 
