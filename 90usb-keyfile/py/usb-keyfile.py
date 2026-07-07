@@ -11,14 +11,14 @@ usb-keyfile.py - dracut initramfs hook 的 Python 实现
 import os
 import sys
 import time
+import tomllib
 import subprocess
 import threading
 from pathlib import Path
 from typing import Optional
 
 # ===== 常量 =====
-CONF_PATH = "/etc/usb-keyfile.conf"
-LUKS_CONF_PATH = "/etc/luks_uuid.conf"
+CONF_PATH = "/etc/usb-keyfile.toml"
 MOUNT_POINT = Path("/run/usb")
 MAX_RETRIES = 30
 RETRY_INTERVAL = 1.0  # 秒
