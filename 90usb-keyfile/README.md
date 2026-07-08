@@ -103,7 +103,7 @@ dracut --force
 
 ---
 
-## 完整的调试流程
+## 完整的调试流程 rd.break=initqueue 调试时，ubuntu26.04 在 /var/lib/dracut/hooks/ 目录中。
 
 这是一个非常精确且高效的调试方法！在 `rd.break` 模式下手动执行特定模块脚本，可以完全隔离该模块的逻辑，避免其他模块的干扰。
 
