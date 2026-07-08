@@ -15,6 +15,7 @@ import time
 import tomllib
 import termios
 import subprocess
+import atexit
 import threading
 from pathlib import Path
 from typing import Optional
@@ -45,8 +46,10 @@ class LUKSEntry:
 
 
 # ===== 全局状态 =====
+global config, luks_entries
 config:  Config
 luks_entries: list[LUKSEntry]
+
 _unlock_lock = threading.Lock()
 # _unlock_done = False
 
@@ -58,13 +61,18 @@ class InputAndLog:
     def __init__(self):
         # 方案一完美封装
         raw_console = open('/dev/console', 'r+b', buffering=0)
-        self.console = io.TextIOWrapper(raw_console, encoding='ascii', line_buffering=True)
+        # self.console = io.TextIOWrapper(raw_console, encoding='ascii', line_buffering=True)
+        self.console = io.TextIOWrapper(raw_console, encoding='utf-8', errors='surrogateescape', line_buffering=True)
 
-    def log(self, msg):
+    def log(self, msg: str):
         # 安全地输出到控制台，防止楼梯输出
         print(f"usb-keyfile: INFO: {msg}", file=self.console, end="\r\n", flush=True)
 
-    def ask(self, prompt):
+    def ask(self, prompt: str) -> str:
+        p = subprocess.run(["systemd-ask-password", "--echo=no", prompt], stdout=subprocess.PIPE, check=True)
+        return p.stdout.strip().decode("utf-8")
+
+    def ask_old(self, prompt: str) -> str:
         # 1. 打印提示词（注意 \r\n 换行适配）
         print(prompt, file=self.console, end="", flush=True)
 
@@ -108,7 +116,7 @@ class InputAndLog:
 
 
 ial = InputAndLog()
-
+atexit.register(lambda: ial.close())
 
 # ===== 配置加载 =====
 def load_config(path: Path = CONF_PATH) -> tuple[Config, list[LUKSEntry]]:
@@ -118,6 +126,8 @@ def load_config(path: Path = CONF_PATH) -> tuple[Config, list[LUKSEntry]]:
 
     with open(path, "rb") as f:
         data = tomllib.load(f)
+    
+    # ial.info(f"usb-keyfile.toml -> {data}")
 
     # 解析 [usb] 部分
     usb_section = data["usb"]
@@ -134,7 +144,7 @@ def load_config(path: Path = CONF_PATH) -> tuple[Config, list[LUKSEntry]]:
             u = part["uuid"]
             opt = part.get("options")
             if u and n:
-                entries.append(LUKSEntry(u, n, opt))
+                entries.append(LUKSEntry(n, u, opt))
 
     return cfg, entries
 
@@ -235,21 +245,10 @@ def unlock_all_using_key(keyfile: Path) -> bool:
 def usb_loop(stop_event: threading.Event):
     """尝试 USB 自动解锁（循环）"""
 
-    global luks_entries
-
-    # 加载配置
-    try:
-        config, luks_entries = load_config()
-    except Exception as e:
-        ial.warn(f"Config load failed: {e}")
-        return
+    global config
 
     if not config.usb_uuid or not config.keyfile:
         ial.warn("USB_UUID and KEYFILE must be set in config")
-        return
-
-    if not luks_entries:
-        ial.warn("No LUKS entries in config")
         return
 
 
@@ -302,8 +301,7 @@ def interactive_input(stop_event: threading.Event):
 
             if not pw:
                 continue
-            # pw = line.decode("utf-8", errors="replace").rstrip("\n\r")
-            ial.info(f"当前的输入：{pw}")
+
             if not pw:
                 continue
 
@@ -315,6 +313,7 @@ def interactive_input(stop_event: threading.Event):
             if unlock_all_using_key(INTERACTIVE_PW):
                 ial.info("Password unlock succeeded")
                 stop_event.set()
+                INTERACTIVE_PW.unlink()
                 return
             else:
                 ial.warn("Password incorrect, try again")
@@ -341,6 +340,21 @@ def on_signal(signum, frame):
 
 # ===== 主程序 =====
 def main():
+
+    global config, luks_entries
+
+    # 加载配置
+    try:
+        config, luks_entries = load_config()
+    except Exception as e:
+        ial.warn(f"Config load failed: {e}")
+        sys.exit(1)
+
+    if not luks_entries:
+        ial.warn("No LUKS entries in config")
+        sys.exit(1)
+    
+
     # 注册信号处理
     import signal as sig
     sig.signal(sig.SIGTERM, on_signal)

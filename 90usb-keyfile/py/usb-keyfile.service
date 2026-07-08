@@ -1,0 +1,20 @@
+[Unit]
+Description=USB Keyfile Unlocker
+DefaultDependencies=no
+# 关键：必须在 udev 触发之后（否则认不到 USB 设备和物理键盘）
+After=systemd-udev-trigger.service
+# 关键：必须在 dracut 陷入寻找 root 设备的死循环之前执行
+Before=dracut-initqueue.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# 执行你的 Python 脚本
+ExecStart=/usr/local/bin/usb-keyfile
+# 核心：允许服务霸占控制台，向 systemd-ask-password 索要 TTY
+StandardInput=tty
+StandardOutput=tty
+TTYPath=/dev/console
+
+[Install]
+WantedBy=dracut-initqueue.target
