@@ -23,7 +23,7 @@ from typing import Optional
 CONF_PATH = Path("/etc/usb-keyfile.toml")
 MOUNT_POINT = Path("/run/usb")
 INTERACTIVE_PW = Path("/run/usb-keyfile-pw-file")
-MAX_RETRIES = 30
+MAX_RETRIES = 180
 RETRY_INTERVAL = 1.0  # 秒
 
 DEV_BY_UUID = Path("/dev/disk/by-uuid")
@@ -234,6 +234,25 @@ def unlock_all_using_key(keyfile: Path) -> bool:
 # ===== USB 解锁循环 =====
 def usb_loop(stop_event: threading.Event):
     """尝试 USB 自动解锁（循环）"""
+
+    global luks_entries
+
+    # 加载配置
+    try:
+        config, luks_entries = load_config()
+    except Exception as e:
+        ial.warn(f"Config load failed: {e}")
+        return
+
+    if not config.usb_uuid or not config.keyfile:
+        ial.warn("USB_UUID and KEYFILE must be set in config")
+        return
+
+    if not luks_entries:
+        ial.warn("No LUKS entries in config")
+        return
+
+
     for i in range(1, MAX_RETRIES + 1):
         if stop_event.is_set():
             return
@@ -322,23 +341,6 @@ def on_signal(signum, frame):
 
 # ===== 主程序 =====
 def main():
-    global config, luks_entries
-
-    # 加载配置
-    try:
-        config, luks_entries = load_config()
-    except Exception as e:
-        ial.warn(f"Config load failed: {e}")
-        sys.exit(1)
-
-    if not config.usb_uuid or not config.keyfile:
-        ial.warn("USB_UUID and KEYFILE must be set in config")
-        sys.exit(1)
-
-    if not luks_entries:
-        ial.warn("No LUKS entries in config")
-        sys.exit(1)
-
     # 注册信号处理
     import signal as sig
     sig.signal(sig.SIGTERM, on_signal)
