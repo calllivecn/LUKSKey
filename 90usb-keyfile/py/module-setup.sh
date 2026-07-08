@@ -31,13 +31,16 @@ install() {
 
     # 安装文件到initramfs配置目录
     inst_simple "/etc/usb-keyfile.toml"
-    inst_simple "$moddir/usb-keyfile" "/usr/local/bin/usb-keyfile"
+    inst_binary "$moddir/usb-keyfile" "/usr/local/bin/usb-keyfile"
 
     inst_simple "$moddir/usb-keyfile.service" "$systemdsystemunitdir/usb-keyfile.service"
     # 建立软链接，相当于在 initramfs 内部执行 systemctl enable
     # 把它挂载到 dracut-initqueue.target 的 wants 目录下
-    mkdir -p "${initdir}/${systemdsystemunitdir}/dracut-initqueue.target.wants"
-    ln_r "../usb-keyfile.service" "${systemdsystemunitdir}/dracut-initqueue.target.wants/usb-keyfile.service"
+    # mkdir -p "${initdir}/${systemdsystemunitdir}/dracut-initqueue.target.wants"
+    # ln_r "../usb-keyfile.service" "${systemdsystemunitdir}/dracut-initqueue.target.wants/usb-keyfile.service"
+
+    mkdir -p "${initdir}/${systemdsystemunitdir}/sysinit.target.wants"
+    ln_r "../usb-keyfile.service" "${systemdsystemunitdir}/sysinit.target.wants/usb-keyfile.service"
 
 
     # 安装必要工具

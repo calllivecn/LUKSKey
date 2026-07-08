@@ -15,7 +15,7 @@ ExecStart=/usr/local/bin/usb-keyfile
 
 # 3. 核心修正：放弃直接生猛地霸占 tty 输入
 # 现代 systemd 服务的标准做法：使用 standard 输入输出重定向到 console，
-# 这能让你的 python 脚本里 ial.ask 调用的 "systemd-ask-password" 
+# 这能让你的 python 脚本调用的 "systemd-ask-password" 
 # 通过标准的系统管道无缝弹到主屏幕上，而不会触发物理 TTY 资源锁冲突！
 StandardInput=console
 StandardOutput=journal+console
@@ -23,7 +23,7 @@ StandardError=journal+console
 
 # 4. 告诉 Systemd 哪怕进程退出了，在没有解锁前也认为服务是活的
 RemainAfterExit=yes
-TimeoutSec=0
+TimeoutSec=30s
 
 [Install]
 WantedBy=dracut-initqueue.target

@@ -1,0 +1,18 @@
+[Unit]
+Description=Ask for password LUKS
+DefaultDependencies=no
+Before=initrd-root-device.target
+After=systemd-vconsole-setup.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/systemd-cryptsetup attach root /dev/vda3
+StandardInput=tty-force
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/console
+TimeoutSec=180
+
+[Install]
+WantedBy=sysinit.target
