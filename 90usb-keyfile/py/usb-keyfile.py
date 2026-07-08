@@ -293,7 +293,8 @@ def interactive_input(stop_event: threading.Event):
                 return
 
             try:
-                pw = ial.ask("Please enter the LUKS password: ")
+                while (pw := ial.ask("Please enter the LUKS password: ")) == "":
+                    pass
             except Exception:
                 time.sleep(RETRY_INTERVAL)
                 continue
@@ -322,7 +323,7 @@ def interactive_input(stop_event: threading.Event):
 # ===== 信号处理 =====
 def on_signal(signum, frame):
     """收到 SIGTERM 等信号时退出"""
-    os._exit(0)
+    sys.exit(0)
 
 
 # ===== 主程序 =====
