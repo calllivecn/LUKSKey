@@ -273,14 +273,13 @@ def usb_loop(stop_event: threading.Event):
             if unlock_all_using_key(config.keyfile):
                 ial.info("USB key unlock succeeded")
                 stop_event.set()
-                return
+                break
         else:
             ial.warn("Keyfile not found on USB")
 
         time.sleep(RETRY_INTERVAL)
 
-        umount_usb()
-
+    umount_usb()
     ial.warn("USB key unlock failed after all retries")
 
 
@@ -302,9 +301,6 @@ def interactive_input(stop_event: threading.Event):
             if not pw:
                 continue
 
-            if not pw:
-                continue
-
             with open(INTERACTIVE_PW, "w") as f:
                 f.write(pw)
             
@@ -314,22 +310,13 @@ def interactive_input(stop_event: threading.Event):
                 ial.info("Password unlock succeeded")
                 stop_event.set()
                 INTERACTIVE_PW.unlink()
-                return
+                break
             else:
                 ial.warn("Password incorrect, try again")
+                INTERACTIVE_PW.unlink()
+
     except Exception as e:
         ial.warn(f"Interactive input error: {e}")
-
-
-# ===== 监控线程 =====
-def monitor_unlock(stop_event: threading.Event):
-    """监控解锁完成事件，完成后退出程序"""
-    while not stop_event.is_set():
-        time.sleep(0.5)
-        if _unlock_lock.locked():
-            stop_event.set()
-            time.sleep(1)
-            os._exit(0)
 
 
 # ===== 信号处理 =====
@@ -369,9 +356,12 @@ def main():
     interactive_thread = threading.Thread(target=interactive_input, args=(stop_event,), daemon=True)
     interactive_thread.start()
 
-    # 监控线程（在主线程中运行）
-    monitor_unlock(stop_event)
+    # 核心修改：让主线程在这里安全地阻塞，静静等待任何一个子线程解锁成功后发出信号
+    stop_event.wait()
 
+    # 醒来代表解锁成功了，优雅退出
+    ial.info("Exiting usb-keyfile securely.")
+    sys.exit(0)
 
 if __name__ == "__main__":
     main()

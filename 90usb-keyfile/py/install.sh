@@ -22,4 +22,5 @@ install -m755 module-setup.sh "${USB_KEYFILE_DIR}"
 
 install -m755 dist/usb-keyfile "${USB_KEYFILE_DIR}"
 
+install -m755 usb-keyfile.service "${USB_KEYFILE_DIR}"
 
