@@ -69,7 +69,7 @@ class InputAndLog:
         print(f"usb-keyfile: INFO: {msg}", file=self.console, end="\r\n", flush=True)
 
     def ask(self, prompt: str) -> str:
-        p = subprocess.run(["systemd-ask-password", "--echo=no", prompt], stdout=subprocess.PIPE, check=True)
+        p = subprocess.run(["systemd-ask-password", "--echo=no", "--timeout=30", prompt], stdout=subprocess.PIPE, check=True)
         return p.stdout.strip().decode("utf-8")
 
     def ask_old(self, prompt: str) -> str:
@@ -155,12 +155,11 @@ def wait_for_device(uuid: str) -> bool:
     """等待 USB 设备出现（检查 /dev/disk/by-uuid 目录），最多重试 MAX_RETRIES 次"""
     target = DEV_BY_UUID / uuid
     ial.info(f"Waiting for device {uuid}...")
-    for _ in range(MAX_RETRIES):
-        if target.exists():
-            ial.info(f"Device {uuid} found via {target.resolve()}")
-            return True
-        time.sleep(RETRY_INTERVAL)
-    return False
+    if target.exists():
+        ial.info(f"Device {uuid} found via {target.resolve()}")
+        return True
+    else:
+        return False
 
 
 def resolve_luks_device(uuid: str) -> Optional[Path]:
@@ -266,16 +265,17 @@ def usb_loop(stop_event: threading.Event):
         if not mount_usb(config.usb_uuid):
             continue
 
-        ial.info("USB keyfile found")
-
-        if config.keyfile.is_file():
+        keyfile = MOUNT_POINT / config.keyfile
+        if keyfile.is_file():
+            ial.info("USB keyfile found")
             ial.info("Keyfile read, attempting unlock...")
-            if unlock_all_using_key(config.keyfile):
+            if unlock_all_using_key(keyfile):
                 ial.info("USB key unlock succeeded")
                 stop_event.set()
                 break
         else:
             ial.warn("Keyfile not found on USB")
+
 
         time.sleep(RETRY_INTERVAL)
 
@@ -294,7 +294,9 @@ def interactive_input(stop_event: threading.Event):
 
             try:
                 while (pw := ial.ask("Please enter the LUKS password: ")) == "":
-                    pass
+                    if stop_event.is_set():
+                        return
+                    
             except Exception:
                 time.sleep(RETRY_INTERVAL)
                 continue

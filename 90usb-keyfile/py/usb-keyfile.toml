@@ -2,8 +2,8 @@
 # USB 设备分区 UUID（对应原 USB_UUID）
 uuid = "3105-B091"
 
-# USB分区中 keyfile 文件
-keyfile = "/keyfile.bin"
+# USB分区中 keyfile 文件相对中U盘根目录的路径
+keyfile = "keyfile.bin"
 
 [luks]
 # 需要解锁的 LUKS 分区列表（对应原 luks_uuid.conf）
