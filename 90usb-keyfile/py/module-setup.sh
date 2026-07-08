@@ -31,7 +31,7 @@ install() {
     # inst_hook pre-mount 20 "$moddir/usb-keyfile.sh"
 
     # 安装文件到initramfs配置目录
-    inst_simple "/etc/usb-keyfile.conf"
+    inst_simple "/etc/usb-keyfile.toml"
 
     # 安装必要工具
     inst_multiple \
