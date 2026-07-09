@@ -1,3 +1,10 @@
+
+## py(完成)
+## sh(旧版)
+## go(未完成)
+
+--- 
+
 # 📁 dracut 模块结构
 
 - 一个 $\text{dracut}$ 模块本质上就是一个包含特定文件的目录。
@@ -16,7 +23,7 @@
 
 # 安装与使用
 
-- dracut 模块通常放在, 安装到这里(ubuntu25.10)：
+- dracut 模块通常放在, 安装到这里(ubuntu25.10及更新版)：
 
 ```
 /usr/lib/dracut/modules.d/90usb-keyfile/
