@@ -9,7 +9,7 @@ After=systemd-vconsole-setup.service
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/bin/usb-keyfile
-TimeoutSec=180s
+TimeoutSec=300s
 
 [Install]
 WantedBy=sysinit.target
