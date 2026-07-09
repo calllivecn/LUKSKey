@@ -25,7 +25,7 @@
 - 修改dracut 配置
 
 ```
-# vim /etc/dracut.conf.d/your-usbkeyfile.conf
+# vim /etc/dracut.conf.d/your-usbkeyfile.*
 add_dracutmodules+=" usb-keyfile " # 注意这里前后都要有空格
 omit_dracutmodules+=" crypt systemd-cryptsetup " # 创建initramfs 时，排除系统自带的模块。
 ```
@@ -33,7 +33,7 @@ omit_dracutmodules+=" crypt systemd-cryptsetup " # 创建initramfs 时，排除�
 - 更新initramfs
 
 ```
-dracut --force
+dracut -v --force # 调试时添加上 --add bash。
 ```
 
 - 重启系统开始

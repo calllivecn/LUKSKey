@@ -24,59 +24,8 @@ from dataclasses import dataclass
 CONF_PATH = Path("/etc/usb-keyfile.toml")
 MOUNT_POINT = Path("/run/usb")
 INTERACTIVE_PW = Path("/run/usb-keyfile-pw-file")
-MAX_RETRIES = 180
 
 DEV_BY_UUID = Path("/dev/disk/by-uuid")
-
-
-@dataclass
-class LUKSEntry:
-    """LUKS 分区条目（uuid 和 name）"""
-    name: str
-    uuid: str
-    options: str|None
-
-
-class Config:
-
-    def __init__(self, path: Path = CONF_PATH):
-        """加载 TOML 配置文件，返回 Config 和 LUKS 条目列表"""
-        if not path.is_file():
-            raise FileNotFoundError(f"Config file not found: {path}")
-
-        with open(path, "rb") as f:
-            data = tomllib.load(f)
-        
-        # ial.info(f"usb-keyfile.toml -> {data}")
-
-        self.luks_unlocking = threading.Lock()
-        # 创建停止事件
-        self.stop_event = threading.Event()
-
-        # 解析 [usb] 部分
-        usb = data["usb"]
-        self.usb_uuid: str = usb["uuid"]
-        self.usb_keyfile: str = usb["keyfile"]
-
-        # 解析 [luks] 部分
-        luks_list = data["luks"]
-
-        self.entries: list[LUKSEntry] = []
-        for part in luks_list:
-            if isinstance(part, dict):
-                n = part["name"]
-                u = part["uuid"]
-                opt = part.get("options")
-                if u and n:
-                    self.entries.append(LUKSEntry(n, u, opt))
-    
-
-    def check_usb(self) -> bool:
-        self.keyfile_path = MOUNT_POINT / self.usb_keyfile
-        if self.keyfile_path.exists() and self.keyfile_path.is_file():
-            return True
-        else:
-            return False
 
 
 # ===== 输入/输出/日志 =====
@@ -101,7 +50,7 @@ class InputAndLog:
         self.log(msg, "WARN")
 
     def ask(self, prompt: str) -> str:
-        p = subprocess.run(["systemd-ask-password", "--echo=no", "--timeout=30", prompt], stdout=subprocess.PIPE, check=True)
+        p = subprocess.run(["systemd-ask-password", "-n", "--echo=no", "--emoji=auto", "--timeout=30", prompt], stdout=subprocess.PIPE, check=True)
         return p.stdout.strip().decode("utf-8")
 
     def ask_old(self, prompt: str) -> str:
@@ -143,6 +92,65 @@ ial = InputAndLog()
 atexit.register(lambda: ial.close())
 
 
+@dataclass
+class LUKSEntry:
+    """LUKS 分区条目（uuid 和 name）"""
+    name: str
+    uuid: str
+    options: str|None
+
+
+class Config:
+
+    def __init__(self, path: Path = CONF_PATH):
+        """加载 TOML 配置文件，返回 Config 和 LUKS 条目列表"""
+        if not path.is_file():
+            raise FileNotFoundError(f"Config file not found: {path}")
+
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+        
+        # ial.info(f"usb-keyfile.toml -> {data}")
+
+        self.luks_unlocking = threading.Lock()
+        # 创建停止事件
+        self.stop_event = threading.Event()
+
+        # 解析 [usb] 部分
+        usb: dict = data.get("usb", {})
+        self.usb_uuid: str = usb.get("uuid", "")
+        self.usb_keyfile: str = usb.get("keyfile", "")
+
+        # 解析 [luks] 部分
+        luks_list = data["luks"]
+
+        self.entries: list[LUKSEntry] = []
+        for part in luks_list:
+            if isinstance(part, dict):
+                n = part["name"]
+                u = part["uuid"]
+                opt = part.get("options")
+                if u and n:
+                    self.entries.append(LUKSEntry(n, u, opt))
+    
+
+    def check_usb_config(self) -> bool:
+
+        if self.usb_uuid == "" or self.usb_keyfile == "":
+            ial.info("No keyfile found in the USB configuration. The USB unlock thread has terminated.")
+            return False
+        else:
+            return True
+
+    def check_usb_keyfile(self) -> bool:
+        self.keyfile_path = MOUNT_POINT / self.usb_keyfile
+        if self.keyfile_path.exists() and self.keyfile_path.is_file():
+            ial.info("USB keyfile found, attempting unlock...")
+            return True
+        else:
+            ial.warn("Keyfile not found on USB")
+            return False
+
 # ===== USB 相关操作 =====
 
 def wait_for_device(uuid: str) -> bool:
@@ -180,11 +188,12 @@ def mount_usb(uuid: str) -> bool:
 
 def umount_usb():
     """卸载 USB 并清理挂载点"""
-    subprocess.run(["umount", MOUNT_POINT], timeout=30)
-    try:
-        MOUNT_POINT.unlink()
-    except OSError:
-        pass
+    if MOUNT_POINT.is_mount():
+        subprocess.run(["umount", MOUNT_POINT], timeout=30)
+        try:
+            MOUNT_POINT.rmdir()
+        except OSError:
+            pass
 
 
 # ===== LUKS 解锁 =====
@@ -215,9 +224,6 @@ def luks_unlock(keyfile: Path, entry: LUKSEntry) -> bool:
 
 def unlock_all_using_usb_key(config: Config) -> bool:
     """用给定密钥解锁所有 LUKS 分区（线程安全，通过 threading.Lock 保护）"""
-
-    if not config.check_usb():
-        raise FileNotFoundError(f"keyfile: {config.usb_keyfile} is not found!")
 
     with config.luks_unlocking:
         all_ok = []
@@ -263,77 +269,76 @@ def unlock_all_using_password(config: Config, pwfile: Path) -> bool:
 def usb_loop(config: Config):
     """尝试 USB 自动解锁（循环）"""
 
-    if not config.usb_uuid or not config.keyfile_path:
-        ial.warn("USB_UUID and KEYFILE must be set in config")
+    if not config.check_usb_config():
         return
 
-    sleep = 10
-    for i in range(1, MAX_RETRIES + 1, sleep):
+    usb_device_found_flag = False
+    max_retries = 180
+    for i in range(1, max_retries + 1):
+
         if config.stop_event.is_set():
             return
-
-        ial.info(f"USB attempt {i}/{MAX_RETRIES}...")
-        if not wait_for_device(config.usb_uuid):
-            ial.warn("USB device not found, retrying...")
-            time.sleep(sleep)
+        
+        ial.info(f"USB attempt {i}/{max_retries} ...")
+        if not usb_device_found_flag:
+            if wait_for_device(config.usb_uuid):
+                usb_device_found_flag = True
+                ial.info("USB device found, mount ...")
+                mount_usb(config.usb_uuid)
+            else:
+                ial.warn("USB device not found, retrying...")
+            
+            time.sleep(1)
             continue
 
-        ial.info("USB device found")
-        if not mount_usb(config.usb_uuid):
-            continue
-
-        if config.check_usb():
-            ial.info("USB keyfile found, attempting unlock...")
+        if config.check_usb_keyfile():
             if unlock_all_using_usb_key(config):
                 ial.info("USB key unlock succeeded")
                 config.stop_event.set()
-                break
+            else:
+                ial.warn("USB key unlock failed")
         else:
-            ial.warn("Keyfile not found on USB")
+            ial.warn(f"USB keyfile: {config.keyfile_path} not found ...")
+            break
 
-
-        time.sleep(sleep)
+        time.sleep(1)
 
     umount_usb()
-    ial.warn("USB key unlock failed after all retries")
 
 
 # ===== 交互式密码输入 =====
 def interactive_input(config: Config):
     """从 /dev/console 读取密码解锁"""
 
-    try:
-        for _ in range(5):
-            if config.stop_event.is_set():
-                return
+    for _ in range(5):
+        if config.stop_event.is_set():
+            return
 
-            try:
-                while (pw := ial.ask("Please enter the LUKS password: ")) == "":
-                    if config.stop_event.is_set():
-                        return
-                    
-            except Exception:
-                continue
+        try:
+            while (pw := ial.ask("Please enter the LUKS password: ")) == "":
+                if config.stop_event.is_set():
+                    return
+                
+        except Exception as e:
+            ial.warn(f"Interactive input error: {e}")
+            continue
 
-            if not pw:
-                continue
+        if not pw:
+            continue
 
-            with open(INTERACTIVE_PW, "w") as f:
-                f.write(pw)
-            
-            os.chmod(INTERACTIVE_PW, 0o400)
+        with open(INTERACTIVE_PW, "w") as f:
+            f.write(pw)
+        
+        os.chmod(INTERACTIVE_PW, 0o400)
 
-            if unlock_all_using_password(config, INTERACTIVE_PW):
-                ial.info("Password unlock succeeded")
-                config.stop_event.set()
-                INTERACTIVE_PW.unlink()
-                break
-            else:
-                ial.warn("Password incorrect, try again")
-                INTERACTIVE_PW.unlink()
-
-    except Exception as e:
-        ial.warn(f"Interactive input error: {e}")
+        if unlock_all_using_password(config, INTERACTIVE_PW):
+            ial.info("Password unlock succeeded")
+            config.stop_event.set()
+            INTERACTIVE_PW.unlink()
+            break
+        else:
+            ial.warn("Password incorrect, try again")
+            INTERACTIVE_PW.unlink()
 
 
 # ===== 信号处理 =====
