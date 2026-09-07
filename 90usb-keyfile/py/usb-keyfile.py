@@ -188,12 +188,29 @@ def mount_usb(uuid: str) -> bool:
 
 def umount_usb():
     """卸载 USB 并清理挂载点"""
-    if MOUNT_POINT.is_mount():
-        subprocess.run(["umount", MOUNT_POINT], timeout=30)
-        try:
-            MOUNT_POINT.rmdir()
-        except OSError:
-            pass
+    if not MOUNT_POINT.is_mount():
+        return
+
+    try:
+        result = subprocess.run(
+            ["umount", str(MOUNT_POINT)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        ial.warn(f"USB unmount failed: {e}")
+        return
+
+    if result.returncode != 0:
+        detail = result.stderr.strip()
+        ial.warn(f"USB unmount failed: {detail or f'exit status {result.returncode}'}")
+        return
+
+    try:
+        MOUNT_POINT.rmdir()
+    except OSError:
+        pass
 
 
 # ===== LUKS 解锁 =====
@@ -274,36 +291,38 @@ def usb_loop(config: Config):
 
     usb_device_found_flag = False
     max_retries = 180
-    for i in range(1, max_retries + 1):
+    try:
+        for i in range(1, max_retries + 1):
 
-        if config.stop_event.is_set():
-            return
-        
-        ial.info(f"USB attempt {i}/{max_retries} ...")
-        if not usb_device_found_flag:
-            if wait_for_device(config.usb_uuid):
-                usb_device_found_flag = True
-                ial.info("USB device found, mount ...")
-                mount_usb(config.usb_uuid)
+            if config.stop_event.is_set():
+                return
+
+            ial.info(f"USB attempt {i}/{max_retries} ...")
+            if not usb_device_found_flag:
+                if wait_for_device(config.usb_uuid):
+                    usb_device_found_flag = True
+                    ial.info("USB device found, mount ...")
+                    mount_usb(config.usb_uuid)
+                else:
+                    ial.warn("USB device not found, retrying...")
+
+                time.sleep(1)
+                continue
+
+            if config.check_usb_keyfile():
+                if unlock_all_using_usb_key(config):
+                    ial.info("USB key unlock succeeded")
+                    config.stop_event.set()
+                    break
+                else:
+                    ial.warn("USB key unlock failed")
             else:
-                ial.warn("USB device not found, retrying...")
-            
+                ial.warn(f"USB keyfile: {config.keyfile_path} not found ...")
+                break
+
             time.sleep(1)
-            continue
-
-        if config.check_usb_keyfile():
-            if unlock_all_using_usb_key(config):
-                ial.info("USB key unlock succeeded")
-                config.stop_event.set()
-            else:
-                ial.warn("USB key unlock failed")
-        else:
-            ial.warn(f"USB keyfile: {config.keyfile_path} not found ...")
-            break
-
-        time.sleep(1)
-
-    umount_usb()
+    finally:
+        umount_usb()
 
 
 # ===== 交互式密码输入 =====
@@ -370,6 +389,9 @@ def main():
 
     # 核心修改：让主线程在这里安全地阻塞，静静等待任何一个子线程解锁成功后发出信号
     config.stop_event.wait()
+
+    # 等待 USB 线程完成卸载，避免 daemon 线程被进程退出提前终止
+    usb_thread.join()
 
     # 醒来代表解锁成功了，优雅退出
     ial.info("Exiting usb-keyfile securely.")
